@@ -3,7 +3,7 @@
 # ================================
 
 # Trading settings for multiple symbols
-SYMBOLS = ["EURUSD", "AUDUSD", "GBPUSD", "USDCAD"]  # Trade all major pairs
+SYMBOLS = ["EURUSD", "AUDUSD", "GBPUSD", "USDCHF"]  # Trade all major pairs
 TIMEFRAME = "M5"  # Primary timeframe for execution (M1, M5, M15, M30, H1, H4, D1)
 
 # Pattern Settings
@@ -18,19 +18,15 @@ RSI_OVERSOLD = 30
 USE_RSI_FILTER = True  # Enable/disable RSI confirmation
 
 # Multi-Timeframe Analysis Settings
-ANALYSIS_TIMEFRAMES = ["M5", "M15", "H1", "H4"]  # Primary + higher timeframes
-MTF_AGREEMENT_THRESHOLD = 75  # Increased agreement threshold for more conservative trading
+ANALYSIS_TIMEFRAMES = ["M5"]  # Only use M5 timeframe
+MTF_AGREEMENT_THRESHOLD = 75  # Keep conservative threshold
 MTF_WEIGHTS = {
-    "M5": 0.7,
-    "M15": 0.9,
-    "H1": 1.2,
-    "H4": 1.5,
-    "D1": 1.8
+    "M5": 1.0  # Only M5 with full weight
 }
 MTF_INDICATORS = {
     "MA_CROSSOVER": True,
-    "RSI": USE_RSI_FILTER,
-    "PRICE_ACTION": USE_PRICE_ACTION
+    "RSI": False,  # Disable additional indicators
+    "PRICE_ACTION": False
 }
 
 
@@ -41,11 +37,10 @@ DEFAULT_RISK_PERCENT = 1.0  # 1% of balance risked per trade
 DEFAULT_TP_MULTIPLIER = 2.0  # Take profit as multiple of stop loss (fallback)
 DEFAULT_TP_PIPS = 5  # Fixed take profit in pips (override multiplier if set)
 
-# Add to config.py
+# Daily settings
 DAILY_PROFIT_TARGET = 50  # Stop when $50 profit made
 DAILY_MAX_LOSS = -30      # Optional: Stop if $30 loss
 RESET_TIME = "00:00"      # Daily reset time (HH:MM)
-ANALYSIS_TIMEFRAMES = ["H1", "H4"]  # Additional timeframes for analysis
 
 # Symbol-specific settings (you can customize per symbol)
 SYMBOL_SETTINGS = {

@@ -5,12 +5,29 @@
 import MetaTrader5 as mt5
 import os
 
-def write_diagnostic_log(symbol, message):
+def write_diagnostic_log(symbol, message, include_separator=False):
     """Write diagnostic messages to a log file"""
     os.makedirs("logs", exist_ok=True)
     log_file = f"logs/{symbol}_diagnostics.log"
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
     with open(log_file, "a") as f:
-        f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {message}\n")
+        if include_separator:
+            f.write("\n" + "="*50 + "\n")
+        f.write(f"{timestamp} - {message}\n")
+
+def write_ama_diagnostics(symbol, timeframe, latest, prev):
+    """Write AMA indicator diagnostics"""
+    msg = (
+        f"AMA Analysis on {timeframe}:\n"
+        f"Current Price: {latest['close']:.5f}\n"
+        f"AMA50: {latest['ma_medium']:.5f}\n"
+        f"AMA200: {latest['ma_long']:.5f}\n"
+        f"Previous AMA50: {prev['ma_medium']:.5f}\n"
+        f"Previous AMA200: {prev['ma_long']:.5f}\n"
+        f"AMA50 > AMA200: {latest['ma_medium'] > latest['ma_long']}\n"
+    )
+    write_diagnostic_log(symbol, msg, include_separator=True)
 
 import pandas as pd
 import numpy as np
@@ -213,25 +230,33 @@ def analyze_ma_crossover(latest, prev, tf):
     
     # Primary signal - AMA200 vs AMA50 position
     if MTF_INDICATORS.get("MA_CROSSOVER", True):
+        # Debug print
+        print(f"\nAMA Analysis for {tf}:")
+        print(f"AMA50: {latest['ma_medium']:.5f}")
+        print(f"AMA200: {latest['ma_long']:.5f}")
+        print(f"Current Price: {latest['close']:.5f}")
+        
         # Bullish setup: AMA50 > AMA200
         if latest['ma_medium'] > latest['ma_long']:
             buy_score += 2  # Higher weight for primary signal
+            print(f"🟢 Bullish AMA setup on {tf} (AMA50 > AMA200)")
             if prev['ma_medium'] <= prev['ma_long']:
                 buy_score += 1
-                print(f"🟢 AMA50 crossed above AMA200 on {tf} - Primary Buy Signal!")
+                print(f"🟢 Fresh AMA50 cross above AMA200")
             if latest['close'] > latest['ma_medium']:
                 buy_score += 0.5
-                print(f"Price above AMA50 on {tf} - Bullish confirmation")
+                print(f"🟢 Price above AMA50 - Additional confirmation")
                 
         # Bearish setup: AMA50 < AMA200
         elif latest['ma_medium'] < latest['ma_long']:
             sell_score += 2  # Higher weight for primary signal
+            print(f"🔴 Bearish AMA setup on {tf} (AMA50 < AMA200)")
             if prev['ma_medium'] >= prev['ma_long']:
                 sell_score += 1
-                print(f"🔴 AMA50 crossed below AMA200 on {tf} - Primary Sell Signal!")
+                print(f"🔴 Fresh AMA50 cross below AMA200")
             if latest['close'] < latest['ma_medium']:
                 sell_score += 0.5
-                print(f"Price below AMA50 on {tf} - Bearish confirmation")
+                print(f"🔴 Price below AMA50 - Additional confirmation")
                 
     return buy_score, sell_score
 
@@ -353,80 +378,58 @@ def prepare_timeframe_data(symbol, tf):
     return df.dropna()
 
 def analyze_multiple_timeframes_weighted(symbol, timeframes=ANALYSIS_TIMEFRAMES, weights=MTF_WEIGHTS):
-    """Analyze a symbol across multiple timeframes with weighted signals"""
+    """Analyze M5 timeframe for AMA50/AMA200 crossover signals"""
     signals = initialize_signals()
     
-    # Get current session parameters
-    current_session, _, _ = get_session_parameters(1.0)
-    session_params = SESSION_PARAMS.get(current_session, {})
-    require_agreement = session_params.get('require_timeframe_agreement', False)
-    min_signal_strength = session_params.get('min_signal_strength', MTF_AGREEMENT_THRESHOLD)
+    print(f"\n=== M5 AMA Analysis for {symbol} ===")
     
-    print(f"\n=== Advanced Multi-Timeframe Analysis for {symbol} ===")
+    # Get M5 data
+    df = prepare_timeframe_data(symbol, "M5")
+    if df is None or len(df) < 2:
+        print("Not enough M5 data available")
+        return signals
+        
+    latest = df.iloc[-1]
+    prev = df.iloc[-2]
     
-    # Analyze each timeframe
-    for tf in timeframes:
-        weight = weights.get(tf, 1.0)
-        signals['total_weight'] += weight
-        
-        print(f"\nAnalyzing {symbol} on {tf} timeframe (weight: {weight})...")
-        
-        # Get and prepare data
-        df = prepare_timeframe_data(symbol, tf)
-        if df is None:
-            continue
-            
-        # Calculate signals for this timeframe
-        tf_signals = calculate_timeframe_signals(df, tf, weight)
-        if tf_signals is None:
-            continue
-            
-        # Update overall signals
-        if tf_signals['signal'] == 'BUY':
-            signals['weighted_buy_score'] += tf_signals['weighted_buy']
-        elif tf_signals['signal'] == 'SELL':
-            signals['weighted_sell_score'] += tf_signals['weighted_sell']
-            
-        # Store timeframe signals
-        signals['timeframe_signals'][tf] = tf_signals
-        print(f"{tf} signal: {tf_signals['signal']} (Buy: {tf_signals['buy_score']}, Sell: {tf_signals['sell_score']}, Weight: {weight})")
+    # Debug print current values
+    print(f"Current Price: {latest['close']:.5f}")
+    print(f"AMA50: {latest['ma_medium']:.5f}")
+    print(f"AMA200: {latest['ma_long']:.5f}")
     
-    # Calculate final signals
-    if signals['total_weight'] > 0:
-        weighted_buy_percent = (signals['weighted_buy_score'] / signals['total_weight']) * 100
-        weighted_sell_percent = (signals['weighted_sell_score'] / signals['total_weight']) * 100
-        
-        # Check for timeframe agreement if required
-        if require_agreement:
-            h1_signal = signals['timeframe_signals'].get('H1', {}).get('signal', 'NEUTRAL')
-            h4_signal = signals['timeframe_signals'].get('H4', {}).get('signal', 'NEUTRAL')
-            timeframes_agree = h1_signal == h4_signal
+    # Check AMA crossover
+    if latest['ma_medium'] > latest['ma_long']:
+        # Bullish setup
+        signals['weighted_buy_score'] = 100
+        signals['overall_signal'] = 'BUY'
+        signals['signal_strength'] = 100
+        print("🟢 Bullish Setup: AMA50 > AMA200")
+        if prev['ma_medium'] <= prev['ma_long']:
+            print("🟢 Fresh Golden Cross Detected!")
             
-            if not timeframes_agree:
-                print(f"Timeframe agreement required but H1 ({h1_signal}) and H4 ({h4_signal}) disagree")
-                signals['overall_signal'] = 'NEUTRAL'
-                signals['signal_strength'] = 0
-                return signals
+    elif latest['ma_medium'] < latest['ma_long']:
+        # Bearish setup
+        signals['weighted_sell_score'] = 100
+        signals['overall_signal'] = 'SELL'
+        signals['signal_strength'] = 100
+        print("🔴 Bearish Setup: AMA50 < AMA200")
+        if prev['ma_medium'] >= prev['ma_long']:
+            print("🔴 Fresh Death Cross Detected!")
             
-        # Process signals with appropriate threshold
-        if weighted_buy_percent >= min_signal_strength and weighted_buy_percent > weighted_sell_percent:
-            signals['overall_signal'] = 'BUY'
-            signals['signal_strength'] = weighted_buy_percent
-        elif weighted_sell_percent >= min_signal_strength and weighted_sell_percent > weighted_buy_percent:
-            signals['overall_signal'] = 'SELL'
-            signals['signal_strength'] = weighted_sell_percent
-        else:
-            signals['overall_signal'] = 'NEUTRAL'
-            signals['signal_strength'] = max(weighted_buy_percent, weighted_sell_percent)
-        
-        # Print summary
-        print(f"\n=== Multi-Timeframe Analysis Summary for {symbol} ===")
-        print(f"Weighted BUY score: {signals['weighted_buy_score']:.2f}/{signals['total_weight']:.2f} ({weighted_buy_percent:.1f}%)")
-        print(f"Weighted SELL score: {signals['weighted_sell_score']:.2f}/{signals['total_weight']:.2f} ({weighted_sell_percent:.1f}%)")
-        print(f"OVERALL SIGNAL: {signals['overall_signal']} with {signals['signal_strength']:.1f}% strength")
     else:
-        print("No valid timeframes analyzed")
+        signals['overall_signal'] = 'NEUTRAL'
+        signals['signal_strength'] = 0
+        print("AMA lines equal - No clear trend")
         
+    # Store M5 signals
+    signals['timeframe_signals']["M5"] = {
+        'signal': signals['overall_signal'],
+        'ma_medium': latest['ma_medium'],
+        'ma_long': latest['ma_long'],
+        'close': latest['close']
+    }
+    
+    print(f"\nFinal Signal: {signals['overall_signal']}")
     return signals
 
 def get_current_session():
@@ -652,7 +655,7 @@ def prepare_market_data(symbol):
     return df
 
 def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
-    """Check for signals and execute trades with proper MT5 connection and risk management"""
+    """Check for signals and execute trades based on M5 AMA crossovers"""
     from main import pm
     from mt5_helper import check_market_conditions
     
@@ -660,11 +663,11 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
     if not validate_trading_conditions(symbol, risk_percent):
         return
         
-    current_session, effective_risk, use_rsi = get_session_parameters(risk_percent)
+    current_session, effective_risk, _ = get_session_parameters(risk_percent)
     if current_session is None:
         return
         
-    print(f"\n=== Processing {symbol} ===")
+    print(f"\n=== Processing {symbol} on M5 timeframe ===")
     
     if not initialize_mt5_connection(symbol):
         return
@@ -675,37 +678,56 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
         
     market_open = check_market_conditions(symbol)
     print(f"Market status for {symbol}: {'OPEN' if market_open else 'CLOSED'}")
+    write_diagnostic_log(symbol, f"Market {'OPEN' if market_open else 'CLOSED'}")
     
-    # Prepare market data
+    # Get M5 data
     df = prepare_market_data(symbol)
-    if df is None:
+    if df is None or len(df) < 2:
+        write_diagnostic_log(symbol, "Not enough M5 data available")
         return
         
-    # Get trading signals
-    trade_signals = analyze_multiple_timeframes_weighted(symbol)
-    write_diagnostic_log(symbol, f"Multi-timeframe analysis results: {trade_signals}")
+    latest = df.iloc[-1]
+    prev = df.iloc[-2]
+    
+    # Log AMA values
+    write_ama_diagnostics(symbol, "M5", latest, prev)
+    
+    # Determine signal based on AMA crossover
+    signal = 'NEUTRAL'
+    if latest['ma_medium'] > latest['ma_long']:
+        signal = 'BUY'
+        print("🟢 Bullish Setup: AMA50 > AMA200")
+        if prev['ma_medium'] <= prev['ma_long']:
+            print("🟢 Fresh Golden Cross Detected!")
+    elif latest['ma_medium'] < latest['ma_long']:
+        signal = 'SELL'
+        print("🔴 Bearish Setup: AMA50 < AMA200")
+        if prev['ma_medium'] >= prev['ma_long']:
+            print("🔴 Fresh Death Cross Detected!")
+    
+    write_diagnostic_log(symbol, f"M5 AMA Signal: {signal}")
     
     # Check trading conditions
     current_time = datetime.now()
     if not check_cooldown(symbol, current_time):
         return
         
-    if not handle_existing_positions(symbol, trade_signals, current_time):
-        return
-    
-    # Process signals and execute trades
-    if trade_signals['overall_signal'] != 'NEUTRAL' and trade_signals['signal_strength'] >= MTF_AGREEMENT_THRESHOLD:
-        write_diagnostic_log(symbol, f"Strong {trade_signals['overall_signal']} signal detected ({trade_signals['signal_strength']}%)")
-        is_buy = trade_signals['overall_signal'] == 'BUY'
+    # Process signals and execute trades if signal is not neutral
+    if signal != 'NEUTRAL':
+        is_buy = signal == 'BUY'
         
-        # Get base timeframe data for risk calculations
-        df = get_historical_data(symbol, TIMEFRAME, bars_count=50)
-        if df is None:
+        # Check for existing positions that might conflict
+        if not handle_existing_positions(symbol, {'overall_signal': signal}, current_time):
+            return
+            
+        # Get fresh data for risk calculations
+        risk_df = get_historical_data(symbol, TIMEFRAME, bars_count=50)
+        if risk_df is None:
             print(f"No historical data available for {symbol}")
             return
             
         # Calculate and execute trade
-        lot_size, sl_pips, tp_pips = calculate_trade_parameters(symbol, is_buy, df)
+        lot_size, sl_pips, tp_pips = calculate_trade_parameters(symbol, is_buy, risk_df)
         if market_open:
             last_trade_times[symbol] = current_time
             execute_trade(symbol, is_buy, lot_size, sl_pips, tp_pips)
