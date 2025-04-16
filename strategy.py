@@ -1,0 +1,654 @@
+# ================================
+# ai-trading-bot/strategy.py
+# ================================
+
+import MetaTrader5 as mt5
+import os
+
+def write_diagnostic_log(symbol, message):
+    """Write diagnostic messages to a log file"""
+    os.makedirs("logs", exist_ok=True)
+    log_file = f"logs/{symbol}_diagnostics.log"
+    with open(log_file, "a") as f:
+        f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {message}\n")
+
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+from ta.momentum import RSIIndicator
+from ta import add_all_ta_features
+import forex_factory_scrap
+from config import (SYMBOL, TIMEFRAME, MA_SHORT, MA_MEDIUM, 
+                  USE_ADAPTIVE_MA, AMA_FAST_EMA, AMA_SLOW_EMA, SYMBOL_SETTINGS,
+                  DEFAULT_TP_PIPS, RSI_PERIOD, RSI_OVERBOUGHT, RSI_OVERSOLD, USE_RSI_FILTER,
+                  USE_PRICE_ACTION, MIN_PATTERN_BARS, SUPPORT_RESISTANCE_LOOKBACK,
+                  ANALYSIS_TIMEFRAMES, MTF_WEIGHTS, MTF_AGREEMENT_THRESHOLD, MTF_INDICATORS,
+                  TRADING_SESSIONS, SESSION_PARAMS)
+from mt5_helper import (get_historical_data, open_buy_order, open_sell_order, close_all_positions, has_buy_position, has_sell_position)
+from risk_manager import determine_lot
+
+def calculate_ma(df, period):
+    """Calculate Simple Moving Average"""
+    return df['close'].rolling(window=period).mean()
+
+def calculate_rsi(df, period=14):
+    """Calculate RSI using ta package"""
+    try:
+        rsi_values = RSIIndicator(close=df['close'], window=period).rsi()
+        return rsi_values
+    except Exception as e:
+        print(f"Error calculating RSI: {str(e)}")
+        return pd.Series([np.nan] * len(df), index=df.index)
+
+def detect_price_patterns(df, lookback=20):
+    """Detect common price action patterns"""
+    patterns = {
+        'support': False,
+        'resistance': False,
+        'hammer': False,
+        'engulfing': False,
+        'pinbar': False
+    }
+    
+    if len(df) < lookback:
+        return patterns
+    
+    # Support/Resistance detection
+    recent_lows = df['low'].rolling(window=3).min().tail(lookback)
+    recent_highs = df['high'].rolling(window=3).max().tail(lookback)
+    
+    current_low = df['low'].iloc[-1]
+    current_high = df['high'].iloc[-1]
+    
+    # Support - price bouncing off recent lows
+    patterns['support'] = any(abs(current_low - low) < 0.0005 for low in recent_lows)
+    
+    # Resistance - price bouncing off recent highs
+    patterns['resistance'] = any(abs(current_high - high) < 0.0005 for high in recent_highs)
+    
+    # Candlestick patterns (last 3 bars)
+    if len(df) >= 3:
+        prev2 = df.iloc[-3]
+        prev1 = df.iloc[-2]
+        curr = df.iloc[-1]
+        
+        # Hammer pattern
+        body_size = abs(curr['open'] - curr['close'])
+        lower_wick = min(curr['open'], curr['close']) - curr['low']
+        upper_wick = curr['high'] - max(curr['open'], curr['close'])
+        
+        patterns['hammer'] = (
+            lower_wick > 2 * body_size and 
+            upper_wick < body_size * 0.5 and
+            curr['close'] > curr['open']  # Bullish hammer
+        )
+        
+        # Engulfing pattern
+        patterns['engulfing'] = (
+            (prev1['close'] < prev1['open'] and  # Previous bearish
+             curr['close'] > curr['open'] and    # Current bullish
+             curr['open'] < prev1['close'] and
+             curr['close'] > prev1['open']) or
+            (prev1['close'] > prev1['open'] and  # Previous bullish
+             curr['close'] < curr['open'] and    # Current bearish
+             curr['open'] > prev1['close'] and
+             curr['close'] < prev1['open'])
+        )
+        
+        # Pinbar pattern
+        patterns['pinbar'] = (
+            (upper_wick > 2 * body_size and 
+             lower_wick < body_size * 0.5) or
+            (lower_wick > 2 * body_size and
+             upper_wick < body_size * 0.5)
+        )
+    
+    return patterns
+
+def calculate_ama(df, period, fast_ema=2, slow_ema=30):
+    direction = abs(df['close'] - df['close'].shift(period))
+    volatility = df['close'].diff().abs().rolling(window=period).sum()
+    
+    er = (direction / volatility).fillna(0)
+    
+    fast_sc = 2 / (fast_ema + 1)
+    slow_sc = 2 / (slow_ema + 1)
+    
+    sc = ((er * (fast_sc - slow_sc)) + slow_sc).pow(2)
+    
+    ama = pd.Series(index=df.index, dtype='float64')
+    
+    start_index = period + 50
+    ama.iloc[start_index] = df['close'].iloc[start_index]
+    
+    for i in range(start_index + 1, len(df)):
+        ama.iloc[i] = ama.iloc[i-1] + sc.iloc[i] * (df['close'].iloc[i] - ama.iloc[i-1])
+    
+    return ama
+
+def check_recent_crossovers(minutes_to_check=5, symbol=SYMBOL):
+    """Check for recent AMA20/AMA50 crossovers"""
+    df = get_historical_data(symbol, TIMEFRAME, bars_count=300)
+    if df is None:
+        print(f"Failed to get historical data for {symbol} recent crossover check")
+        return
+    
+    df['ma_short'] = calculate_ama(df, MA_SHORT)
+    df['ma_medium'] = calculate_ama(df, MA_MEDIUM)
+    
+    df = df.dropna()
+    
+    # Automatically adapt to different timeframes
+    if TIMEFRAME.startswith("M"):
+        timeframe_minutes = int(TIMEFRAME[1:])
+        # For M1: check 20 bars (20 mins)
+        # For M5: check 4 bars (20 mins)
+        # For M15: check 2 bars (30 mins)
+        bars_to_check = max(2, 20 // timeframe_minutes)
+    else:
+        # For H1+ timeframes, check 20 bars
+        bars_to_check = 20
+    
+    print(f"Timeframe: {TIMEFRAME}, checking {bars_to_check} bars")
+    
+    print(f"Checking last {bars_to_check} bars for recent crossovers...")
+    
+    recent_df = df.iloc[-bars_to_check:]
+    
+    crossover_found = False
+    
+    for i in range(1, len(recent_df)):
+        current = recent_df.iloc[i]
+        previous = recent_df.iloc[i-1]
+        
+        # Golden Cross (AMA20 > AMA50)
+        if current['ma_short'] > current['ma_medium'] and previous['ma_short'] <= previous['ma_medium']:
+            print(f"\n*** RECENT GOLDEN CROSS DETECTED at {current['time']} ***")
+            print(f"AMA{MA_SHORT} crossed above AMA{MA_MEDIUM} at price: {current['close']}")
+            print(f"Previous bar: AMA{MA_SHORT}={previous['ma_short']:.5f}, AMA{MA_MEDIUM}={previous['ma_medium']:.5f}")
+            print(f"Current bar: AMA{MA_SHORT}={current['ma_short']:.5f}, AMA{MA_MEDIUM}={current['ma_medium']:.5f}")
+            crossover_found = True
+            
+            latest = df.iloc[-1]
+            if latest['close'] > latest['ma_short'] and latest['ma_short'] > latest['ma_medium']:
+                print("Current price and AMA alignment is BULLISH")
+                if not has_buy_position(symbol):
+                    # Get symbol-specific lot size
+                    risk_df = get_historical_data(symbol, TIMEFRAME, bars_count=50)
+                    if risk_df is not None:
+                        lot_size, sl_pips = determine_lot(symbol, risk_df, is_buy_signal=True)
+                        open_buy_order(symbol, lot_size, stop_loss_pips=sl_pips)
+            else:
+                print("Current price conditions do not confirm the bullish crossover")
+        
+        # Death Cross (AMA20 < AMA50)
+        if current['ma_short'] < current['ma_medium'] and previous['ma_short'] >= previous['ma_medium']:
+            print(f"\n*** RECENT DEATH CROSS DETECTED at {current['time']} ***")
+            print(f"AMA{MA_SHORT} crossed below AMA{MA_MEDIUM} at price: {current['close']}")
+            print(f"Previous bar: AMA{MA_SHORT}={previous['ma_short']:.5f}, AMA{MA_MEDIUM}={previous['ma_medium']:.5f}")
+            print(f"Current bar: AMA{MA_SHORT}={current['ma_short']:.5f}, AMA{MA_MEDIUM}={current['ma_medium']:.5f}")
+            crossover_found = True
+            
+            latest = df.iloc[-1]
+            if latest['close'] < latest['ma_short'] and latest['ma_short'] < latest['ma_medium']:
+                print("Current price and AMA alignment is BEARISH")
+                if not has_sell_position(symbol):
+                    # Get symbol-specific lot size
+                    risk_df = get_historical_data(symbol, TIMEFRAME, bars_count=50)
+                    if risk_df is not None:
+                        lot_size, sl_pips = determine_lot(symbol, risk_df, is_buy_signal=False)
+                        open_sell_order(symbol, lot_size, stop_loss_pips=sl_pips)
+            else:
+                print("Current price conditions do not confirm the bearish crossover")
+    
+    if not crossover_found:
+        print(f"No recent crossovers detected in the past {minutes_to_check} minutes")
+
+
+
+def analyze_multiple_timeframes_weighted(symbol, timeframes=ANALYSIS_TIMEFRAMES, weights=MTF_WEIGHTS):
+    """
+    Analyze a symbol across multiple timeframes with weighted signals
+    
+    Parameters:
+    - symbol (str): The trading symbol to analyze
+    - timeframes (list): List of timeframes to analyze
+    - weights (dict): Dictionary of weights for each timeframe
+    
+    Returns:
+    - dict: Signal strength information across timeframes with weighted scores
+    """
+    signals = initialize_signals()
+    
+    print(f"\n=== Advanced Multi-Timeframe Analysis for {symbol} ===")
+    
+    # Loop through each timeframe
+    for tf in timeframes:
+        # Get weight for this timeframe (default to 1.0 if not specified)
+        weight = weights.get(tf, 1.0)
+        signals['total_weight'] += weight
+        
+        print(f"\nAnalyzing {symbol} on {tf} timeframe (weight: {weight})...")
+        
+        # Get historical data for this timeframe
+        df = get_historical_data(symbol, tf, bars_count=300)
+        if df is None or len(df) == 0:
+            print(f"No historical data available for {symbol} on {tf}")
+            continue
+        
+        if len(df) < MA_MEDIUM + 5:
+            print(f"Not enough historical data for {symbol} on {tf}")
+            continue
+        
+        # Calculate indicators for this timeframe
+        df['ma_short'] = calculate_ama(df, MA_SHORT, AMA_FAST_EMA, AMA_SLOW_EMA) if USE_ADAPTIVE_MA else calculate_ma(df, MA_SHORT)
+        df['ma_medium'] = calculate_ama(df, MA_MEDIUM, AMA_FAST_EMA, AMA_SLOW_EMA) if USE_ADAPTIVE_MA else calculate_ma(df, MA_MEDIUM)
+        
+        if USE_RSI_FILTER and MTF_INDICATORS.get("RSI", True):
+            df['rsi'] = calculate_rsi(df, RSI_PERIOD)
+        
+        df = df.dropna()
+        
+        if len(df) < 10:
+            print(f"Not enough data points after calculating indicators for {symbol} on {tf}")
+            continue
+        
+        latest = df.iloc[-1]
+        prev = df.iloc[-2] if len(df) > 1 else latest
+        
+        # Initialize scores
+        buy_score = 0
+        sell_score = 0
+        
+        # === Check MA crossover if enabled ===
+        if MTF_INDICATORS.get("MA_CROSSOVER", True):
+            # MA alignment
+            if latest['ma_short'] > latest['ma_medium']:
+                buy_score += 1
+                # Fresh crossover (stronger signal)
+                if prev['ma_short'] <= prev['ma_medium']:
+                    buy_score += 0.5
+                    print(f"Fresh bullish crossover on {tf}!")
+                
+                # Price > MA_Short > MA_Medium (strongest alignment)
+                if latest['close'] > latest['ma_short'] and latest['ma_short'] > latest['ma_medium']:
+                    buy_score += 1
+                    print(f"Strong bullish alignment on {tf}")
+                    
+            elif latest['ma_short'] < latest['ma_medium']:
+                sell_score += 1
+                # Fresh crossover (stronger signal)
+                if prev['ma_short'] >= prev['ma_medium']:
+                    sell_score += 0.5
+                    print(f"Fresh bearish crossover on {tf}!")
+                
+                # Price < MA_Short < MA_Medium (strongest alignment)
+                if latest['close'] < latest['ma_short'] and latest['ma_short'] < latest['ma_medium']:
+                    sell_score += 1
+                    print(f"Strong bearish alignment on {tf}")
+        
+        # === Check RSI if enabled ===
+        if USE_RSI_FILTER and MTF_INDICATORS.get("RSI", True) and 'rsi' in df.columns:
+            rsi_value = latest['rsi']
+            
+            # RSI oversold - bullish
+            if rsi_value <= RSI_OVERSOLD:
+                buy_score += 1
+                print(f"RSI oversold ({rsi_value:.1f}) on {tf} - bullish")
+            # RSI overbought - bearish  
+            elif rsi_value >= RSI_OVERBOUGHT:
+                sell_score += 1
+                print(f"RSI overbought ({rsi_value:.1f}) on {tf} - bearish")
+            # RSI trending up from near oversold
+            elif rsi_value < 40 and rsi_value > RSI_OVERSOLD and rsi_value > prev.get('rsi', rsi_value):
+                buy_score += 0.5
+                print(f"RSI trending up from near oversold on {tf}")
+            # RSI trending down from near overbought
+            elif rsi_value > 60 and rsi_value < RSI_OVERBOUGHT and rsi_value < prev.get('rsi', rsi_value):
+                sell_score += 0.5
+                print(f"RSI trending down from near overbought on {tf}")
+        
+        # === Check price patterns if enabled ===
+        if USE_PRICE_ACTION and MTF_INDICATORS.get("PRICE_ACTION", True):
+            patterns = detect_price_patterns(df)
+            
+            # Analyze bullish patterns
+            if patterns.get('hammer', False):
+                buy_score += 0.5
+                print(f"Bullish hammer pattern on {tf}")
+            if patterns.get('support', False):
+                buy_score += 0.5
+                print(f"Price at support level on {tf}")
+            if patterns.get('engulfing', False) and latest['close'] > latest['open']:
+                buy_score += 0.5
+                print(f"Bullish engulfing pattern on {tf}")
+                
+            # Analyze bearish patterns
+            if patterns.get('resistance', False):
+                sell_score += 0.5
+                print(f"Price at resistance level on {tf}")
+            if patterns.get('pinbar', False) and latest['close'] < latest['open']:
+                sell_score += 0.5
+                print(f"Bearish pinbar pattern on {tf}")
+            if patterns.get('engulfing', False) and latest['close'] < latest['open']:
+                sell_score += 0.5
+                print(f"Bearish engulfing pattern on {tf}")
+        
+        # Determine signal for this timeframe
+        timeframe_signal = 'NEUTRAL'
+        if buy_score > sell_score:
+            timeframe_signal = 'BUY'
+            signals['weighted_buy_score'] += buy_score * weight
+        elif sell_score > buy_score:
+            timeframe_signal = 'SELL'
+            signals['weighted_sell_score'] += sell_score * weight
+        
+        # Store signals for this timeframe
+        signals['timeframe_signals'][tf] = {
+            'signal': timeframe_signal,
+            'buy_score': buy_score,
+            'sell_score': sell_score,
+            'weight': weight,
+            'weighted_buy': buy_score * weight,
+            'weighted_sell': sell_score * weight,
+            'ma_short': latest['ma_short'],
+            'ma_medium': latest['ma_medium'],
+            'close': latest['close'],
+            'rsi': latest.get('rsi', None)
+        }
+        
+        # Print signal summary for this timeframe
+        print(f"{tf} signal: {timeframe_signal} (Buy: {buy_score}, Sell: {sell_score}, Weight: {weight})")
+    
+    # Calculate weighted percentage scores
+    if signals['total_weight'] > 0:
+        weighted_buy_percent = (signals['weighted_buy_score'] / signals['total_weight']) * 100
+        weighted_sell_percent = (signals['weighted_sell_score'] / signals['total_weight']) * 100
+        
+        # Determine overall signal based on weighted scores and threshold
+        if weighted_buy_percent >= MTF_AGREEMENT_THRESHOLD and weighted_buy_percent > weighted_sell_percent:
+            signals['overall_signal'] = 'BUY'
+            signals['signal_strength'] = weighted_buy_percent
+        elif weighted_sell_percent >= MTF_AGREEMENT_THRESHOLD and weighted_sell_percent > weighted_buy_percent:
+            signals['overall_signal'] = 'SELL'
+            signals['signal_strength'] = weighted_sell_percent
+        else:
+            signals['overall_signal'] = 'NEUTRAL'
+            signals['signal_strength'] = max(weighted_buy_percent, weighted_sell_percent)
+        
+        # Print summary
+        print(f"\n=== Multi-Timeframe Analysis Summary for {symbol} ===")
+        print(f"Weighted BUY score: {signals['weighted_buy_score']:.2f}/{signals['total_weight']:.2f} ({weighted_buy_percent:.1f}%)")
+        print(f"Weighted SELL score: {signals['weighted_sell_score']:.2f}/{signals['total_weight']:.2f} ({weighted_sell_percent:.1f}%)")
+        print(f"OVERALL SIGNAL: {signals['overall_signal']} with {signals['signal_strength']:.1f}% strength")
+    else:
+        print("No valid timeframes analyzed")
+        
+    return signals
+
+def get_current_session():
+    """Determine current trading session based on time of day"""
+    now = datetime.now()
+    current_hour = now.hour
+    
+    for session, times in TRADING_SESSIONS.items():
+        start = times['start_hour']
+        end = times['end_hour']
+        
+        # Handle sessions that span midnight (like Asian session)
+        if start > end:  # Session crosses midnight
+            if current_hour >= start or current_hour < end:
+                return session
+        else:  # Normal session within same day
+            if start <= current_hour < end:
+                return session
+    
+    return None  # No active session found
+
+def get_session_parameters(base_risk_percent):
+    """Get session-specific trading parameters"""
+    current_session = get_current_session()
+    
+    if current_session is None:
+        print("No active trading session")
+        return None, None, None
+        
+    # Get session parameters
+    session_params = SESSION_PARAMS.get(current_session, {})
+    
+    # Calculate effective risk based on session risk multiplier
+    risk_multiplier = session_params.get('risk_multiplier', 1.0)
+    effective_risk = base_risk_percent * risk_multiplier
+    
+    # Get RSI filter setting for session
+    use_rsi = session_params.get('use_rsi_filter', USE_RSI_FILTER)
+    
+    print(f"\nCurrent Session: {current_session}")
+    print(f"Risk Multiplier: {risk_multiplier}")
+    print(f"Effective Risk: {effective_risk}%")
+    print(f"Using RSI Filter: {use_rsi}")
+    
+    return current_session, effective_risk, use_rsi
+
+def has_upcoming_high_impact_news(symbol):
+    """Check if there's upcoming high impact news for the symbol's currency"""
+    print("\n=== Checking Forex Factory Calendar ===")
+    events = forex_factory_scrap.fetch_forexfactory_calendar()
+    now = datetime.now()
+    
+    if not events:
+        print("No high-impact news events found today")
+        return False
+        
+    print(f"Found {len(events)} high-impact events to check:")
+    
+    for event in events:
+        print(f"\nChecking event: {event['event']} ({event['currency']}) at {event['time']}")
+        
+        # Check if event affects our symbol's currency (first 3 letters)
+        if event['currency'] != symbol[:3]:
+            print("-> Doesn't affect our symbol, skipping")
+            continue
+            
+        # Parse event time (assuming format like "8:30am" or "2:00pm")
+        try:
+            time_str, period = event['time'].lower().replace('am', '').replace('pm', '').strip().split()
+            hour, minute = map(int, time_str.split(':'))
+            if 'pm' in event['time'].lower() and hour != 12:
+                hour += 12
+            event_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            
+            # Check if event is within our avoidance window
+            time_before = event_time - timedelta(minutes=MINUTES_BEFORE_NEWS)
+            time_after = event_time + timedelta(minutes=MINUTES_AFTER_NEWS)
+            
+            print(f"-> Event time: {event_time}")
+            print(f"-> Avoidance window: {time_before} to {time_after}")
+            
+            if time_before <= now <= time_after:
+                print(f"⚠️ HIGH IMPACT NEWS DETECTED: {event['event']} at {event['time']}")
+                print("-> Avoiding trade due to news impact")
+                return True
+            else:
+                print("-> Outside avoidance window, safe to trade")
+                
+        except Exception as e:
+            print(f"Error parsing event time: {e}")
+            continue
+            
+    print("\nNo upcoming high-impact news affecting our symbol")
+    return False
+
+# Add cooldown tracking
+from datetime import datetime, timedelta
+from typing import Dict
+
+# Global dictionary to track last trade time per symbol
+last_trade_times: Dict[str, datetime] = {}
+TRADE_COOLDOWN_MINUTES = 5  # Wait at least 5 minutes between trades
+
+
+def initialize_signals():
+    """Initialize the signals dictionary for multi-timeframe analysis"""
+    return {
+        'weighted_buy_score': 0,
+        'weighted_sell_score': 0, 
+        'total_weight': 0,
+        'timeframe_signals': {},
+        'overall_signal': 'NEUTRAL'
+    }
+
+def validate_trading_conditions(symbol, risk_percent=1.0):
+    """Validate all conditions before trading"""
+    # Initialize diagnostic logging
+    write_diagnostic_log(symbol, f"Starting trade analysis for {symbol}")
+    
+    # Check for upcoming high impact news
+    if has_upcoming_high_impact_news(symbol):
+        msg = f"Skipping trade due to upcoming high impact news"
+        print(f"\n=== {symbol} NEWS CHECK ===")
+        print(msg)
+        write_diagnostic_log(symbol, msg)
+        return False
+    return True
+
+def initialize_mt5_connection(symbol):
+    """Initialize and verify MT5 connection"""
+    try:
+        if not mt5.initialize():
+            error_msg = f"Failed to initialize MT5 connection for {symbol}. Error: {mt5.last_error()}"
+            print(error_msg)
+            write_diagnostic_log(symbol, error_msg)
+            return False
+        write_diagnostic_log(symbol, "MT5 initialized successfully")
+        return True
+    except Exception as e:
+        error_msg = f"MT5 initialization exception for {symbol}: {str(e)}"
+        print(error_msg)
+        write_diagnostic_log(symbol, error_msg)
+        return False
+
+def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
+    """Check for signals and execute trades with proper MT5 connection and risk management"""
+    # Get the profit manager from main.py
+    from main import pm
+    from mt5_helper import check_market_conditions, get_positions
+    
+    # Validate initial conditions
+    if not validate_trading_conditions(symbol, risk_percent):
+        return
+    
+    # Get session parameters
+    current_session, effective_risk, use_rsi = get_session_parameters(risk_percent)
+    if current_session is None:
+        return
+    
+    print(f"\n=== Processing {symbol} ===")
+    
+    # Initialize MT5
+    if not initialize_mt5_connection(symbol):
+        return
+    
+    # Check profit target
+    if pm.target_reached:
+        print(f"Target already achieved - skipping trade for {symbol}")
+        return
+    
+    # Check market conditions
+    market_open = check_market_conditions(symbol)
+    print(f"Market status for {symbol}: {'OPEN' if market_open else 'CLOSED'}")
+    
+    # Get market data
+    df = get_historical_data(symbol, TIMEFRAME, bars_count=300)
+    if df is None or len(df) == 0:
+        print(f"No historical data available for {symbol}")
+        return
+    
+    if len(df) < MA_MEDIUM + 5:
+        print(f"Not enough historical data for {symbol} (need at least {MA_MEDIUM + 5} bars)")
+        return
+    
+    # Calculate indicators
+    df['ma_short'] = calculate_ama(df, MA_SHORT)
+    df['ma_medium'] = calculate_ama(df, MA_MEDIUM)
+    if USE_RSI_FILTER:
+        df['rsi'] = calculate_rsi(df, RSI_PERIOD)
+    df = df.dropna()
+    
+    if len(df) < 10:
+        print(f"Not enough data points after calculating AMAs for {symbol}")
+        return
+        
+    latest = df.iloc[-1]
+    
+    # Get multi-timeframe analysis
+    trade_signals = analyze_multiple_timeframes_weighted(symbol)
+    write_diagnostic_log(symbol, f"Multi-timeframe analysis results: {trade_signals}")
+    
+    # Execute trade if signal is strong enough
+    # Check cooldown period
+    current_time = datetime.now()
+    if symbol in last_trade_times:
+        time_since_last_trade = current_time - last_trade_times[symbol]
+        if time_since_last_trade.total_seconds() < TRADE_COOLDOWN_MINUTES * 60:
+            write_diagnostic_log(symbol, f"Skipping trade - cooldown period active ({TRADE_COOLDOWN_MINUTES} minutes)")
+            return
+    
+    # Check existing positions to prevent conflicts
+    positions = get_positions(symbol)
+    if positions:
+        write_diagnostic_log(symbol, f"Found existing positions for {symbol}. Analyzing conflicts...")
+        for pos in positions:
+            # If we have a position and get an opposing signal, close it instead of opening new one
+            if (pos.type == 0 and trade_signals['overall_signal'] == 'SELL') or \
+               (pos.type == 1 and trade_signals['overall_signal'] == 'BUY'):
+                write_diagnostic_log(symbol, "Closing conflicting position before new trade")
+                close_all_positions(symbol)
+                # Update cooldown timer after closing position
+                last_trade_times[symbol] = current_time
+                return  # Exit to prevent immediate re-entry
+    
+    if trade_signals['overall_signal'] != 'NEUTRAL' and trade_signals['signal_strength'] >= MTF_AGREEMENT_THRESHOLD:
+        write_diagnostic_log(symbol, f"Strong {trade_signals['overall_signal']} signal detected ({trade_signals['signal_strength']}%)")
+        is_buy = trade_signals['overall_signal'] == 'BUY'
+        
+        # Get base timeframe data for risk calculations
+        df = get_historical_data(symbol, TIMEFRAME, bars_count=50)
+        if df is None:
+            print(f"No historical data available for {symbol}")
+            return
+            
+        # Calculate position size based on risk
+        lot_size, sl_pips = determine_lot(
+            symbol, 
+            df, 
+            is_buy_signal=is_buy, 
+            risk_percent=risk_percent
+        )
+        
+        # Calculate TP
+        tp_pips = SYMBOL_SETTINGS.get(symbol, {}).get("TP_PIPS", DEFAULT_TP_PIPS)
+        if tp_pips is None:
+            tp_multiplier = SYMBOL_SETTINGS.get(symbol, {}).get("TP_MULTIPLIER", 2.0)
+            tp_pips = int(sl_pips * tp_multiplier)
+            
+        # Execute trade based on signal
+        if market_open:
+            try:
+                # Update last trade time
+                last_trade_times[symbol] = current_time
+                
+                # Execute the trade
+                if is_buy:
+                    print(f"Attempting to open BUY position for {symbol}:")
+                    print(f"Lot Size: {lot_size}, SL: {sl_pips} pips, TP: {tp_pips} pips")
+                    open_buy_order(symbol, lot_size, stop_loss_pips=sl_pips, take_profit_pips=tp_pips)
+                else:
+                    print(f"Attempting to open SELL position for {symbol}:")
+                    print(f"Lot Size: {lot_size}, SL: {sl_pips} pips, TP: {tp_pips} pips")
+                    open_sell_order(symbol, lot_size, stop_loss_pips=sl_pips, take_profit_pips=tp_pips)
+                    
+            except Exception as e:
+                error_msg = f"Error executing order: {str(e)}"
+                print(error_msg)
+                write_diagnostic_log(symbol, error_msg)

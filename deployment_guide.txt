@@ -1,0 +1,87 @@
+# Trading Bot Deployment Guide for Azure VM
+
+## Prerequisites
+1. Azure VM with either:
+   - Ubuntu Server (recommended) or
+   - Windows Server
+2. Python 3.8+ installed
+3. MetaTrader 5 installed (Windows only)
+
+## Linux (Ubuntu) Deployment Steps
+
+1. Install Python and dependencies:
+```bash
+sudo apt update
+sudo apt install -y python3 python3-pip python3-venv
+```
+
+2. Create a directory for the bot:
+```bash
+mkdir -p ~/trading-bot
+```
+
+3. Copy all bot files to ~/trading-bot
+
+4. Create and activate virtual environment:
+```bash
+cd ~/trading-bot
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+5. Create systemd service file at /etc/systemd/system/trading-bot.service:
+```ini
+[Unit]
+Description=Trading Bot Service
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/trading-bot
+ExecStart=/home/ubuntu/trading-bot/venv/bin/python /home/ubuntu/trading-bot/main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+6. Enable and start the service:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable trading-bot
+sudo systemctl start trading-bot
+```
+
+## Windows Deployment Steps
+
+1. Install Python from python.org
+2. Install MetaTrader 5
+3. Create C:\trading-bot directory
+4. Copy all bot files to C:\trading-bot
+5. Install dependencies:
+```cmd
+cd C:\trading-bot
+pip install -r requirements.txt
+```
+
+6. Create a Windows Service using NSSM:
+```cmd
+# Download NSSM from https://nssm.cc/download
+nssm install TradingBot
+# Set these parameters in the NSSM GUI:
+# Path: C:\Python38\python.exe
+# Startup directory: C:\trading-bot
+# Arguments: C:\trading-bot\main.py
+```
+
+7. Start the service:
+```cmd
+nssm start TradingBot
+```
+
+## Verification
+Check logs at:
+- Linux: /var/log/syslog or journalctl -u trading-bot
+- Windows: Event Viewer
