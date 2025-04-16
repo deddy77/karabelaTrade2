@@ -206,166 +206,185 @@ def check_recent_crossovers(minutes_to_check=5, symbol=SYMBOL):
 
 
 
+def analyze_ma_crossover(latest, prev, tf):
+    """Analyze moving average crossover signals"""
+    buy_score = 0
+    sell_score = 0
+    
+    if MTF_INDICATORS.get("MA_CROSSOVER", True):
+        if latest['ma_short'] > latest['ma_medium']:
+            buy_score += 1
+            if prev['ma_short'] <= prev['ma_medium']:
+                buy_score += 0.5
+                print(f"Fresh bullish crossover on {tf}!")
+            if latest['close'] > latest['ma_short'] and latest['ma_short'] > latest['ma_medium']:
+                buy_score += 1
+                print(f"Strong bullish alignment on {tf}")
+        elif latest['ma_short'] < latest['ma_medium']:
+            sell_score += 1
+            if prev['ma_short'] >= prev['ma_medium']:
+                sell_score += 0.5
+                print(f"Fresh bearish crossover on {tf}!")
+            if latest['close'] < latest['ma_short'] and latest['ma_short'] < latest['ma_medium']:
+                sell_score += 1
+                print(f"Strong bearish alignment on {tf}")
+                
+    return buy_score, sell_score
+
+def analyze_rsi(latest, prev, tf):
+    """Analyze RSI signals"""
+    buy_score = 0
+    sell_score = 0
+    
+    if USE_RSI_FILTER and MTF_INDICATORS.get("RSI", True) and 'rsi' in latest.index:
+        rsi_value = latest['rsi']
+        
+        if rsi_value <= RSI_OVERSOLD:
+            buy_score += 1
+            print(f"RSI oversold ({rsi_value:.1f}) on {tf} - bullish")
+        elif rsi_value >= RSI_OVERBOUGHT:
+            sell_score += 1
+            print(f"RSI overbought ({rsi_value:.1f}) on {tf} - bearish")
+        elif rsi_value < 40 and rsi_value > RSI_OVERSOLD and rsi_value > prev.get('rsi', rsi_value):
+            buy_score += 0.5
+            print(f"RSI trending up from near oversold on {tf}")
+        elif rsi_value > 60 and rsi_value < RSI_OVERBOUGHT and rsi_value < prev.get('rsi', rsi_value):
+            sell_score += 0.5
+            print(f"RSI trending down from near overbought on {tf}")
+            
+    return buy_score, sell_score
+
+def analyze_price_patterns(df, latest, tf):
+    """Analyze price action patterns"""
+    buy_score = 0
+    sell_score = 0
+    
+    if USE_PRICE_ACTION and MTF_INDICATORS.get("PRICE_ACTION", True):
+        patterns = detect_price_patterns(df)
+        
+        # Bullish patterns
+        if patterns.get('hammer', False):
+            buy_score += 0.5
+            print(f"Bullish hammer pattern on {tf}")
+        if patterns.get('support', False):
+            buy_score += 0.5
+            print(f"Price at support level on {tf}")
+        if patterns.get('engulfing', False) and latest['close'] > latest['open']:
+            buy_score += 0.5
+            print(f"Bullish engulfing pattern on {tf}")
+            
+        # Bearish patterns    
+        if patterns.get('resistance', False):
+            sell_score += 0.5
+            print(f"Price at resistance level on {tf}")
+        if patterns.get('pinbar', False) and latest['close'] < latest['open']:
+            sell_score += 0.5
+            print(f"Bearish pinbar pattern on {tf}")
+        if patterns.get('engulfing', False) and latest['close'] < latest['open']:
+            sell_score += 0.5
+            print(f"Bearish engulfing pattern on {tf}")
+            
+    return buy_score, sell_score
+
+def calculate_timeframe_signals(df, tf, weight):
+    """Calculate signals for a specific timeframe"""
+    if len(df) < 10:
+        print(f"Not enough data points after calculating indicators for timeframe {tf}")
+        return None
+        
+    latest = df.iloc[-1]
+    prev = df.iloc[-2] if len(df) > 1 else latest
+    
+    buy_score = 0
+    sell_score = 0
+    
+    # Analyze different indicators
+    ma_buy, ma_sell = analyze_ma_crossover(latest, prev, tf)
+    rsi_buy, rsi_sell = analyze_rsi(latest, prev, tf)
+    pattern_buy, pattern_sell = analyze_price_patterns(df, latest, tf)
+    
+    # Combine scores
+    buy_score = ma_buy + rsi_buy + pattern_buy
+    sell_score = ma_sell + rsi_sell + pattern_sell
+    
+    # Determine signal
+    signal = 'NEUTRAL'
+    if buy_score > sell_score:
+        signal = 'BUY'
+    elif sell_score > buy_score:
+        signal = 'SELL'
+        
+    return {
+        'signal': signal,
+        'buy_score': buy_score,
+        'sell_score': sell_score,
+        'weight': weight,
+        'weighted_buy': buy_score * weight,
+        'weighted_sell': sell_score * weight,
+        'ma_short': latest['ma_short'],
+        'ma_medium': latest['ma_medium'],
+        'close': latest['close'],
+        'rsi': latest.get('rsi', None)
+    }
+
+def prepare_timeframe_data(symbol, tf):
+    """Prepare indicator data for a timeframe"""
+    df = get_historical_data(symbol, tf, bars_count=300)
+    if df is None or len(df) == 0:
+        print(f"No historical data available for {symbol} on {tf}")
+        return None
+        
+    if len(df) < MA_MEDIUM + 5:
+        print(f"Not enough historical data for {symbol} on {tf}")
+        return None
+        
+    # Calculate indicators
+    df['ma_short'] = calculate_ama(df, MA_SHORT, AMA_FAST_EMA, AMA_SLOW_EMA) if USE_ADAPTIVE_MA else calculate_ma(df, MA_SHORT)
+    df['ma_medium'] = calculate_ama(df, MA_MEDIUM, AMA_FAST_EMA, AMA_SLOW_EMA) if USE_ADAPTIVE_MA else calculate_ma(df, MA_MEDIUM)
+    
+    if USE_RSI_FILTER and MTF_INDICATORS.get("RSI", True):
+        df['rsi'] = calculate_rsi(df, RSI_PERIOD)
+        
+    return df.dropna()
+
 def analyze_multiple_timeframes_weighted(symbol, timeframes=ANALYSIS_TIMEFRAMES, weights=MTF_WEIGHTS):
-    """
-    Analyze a symbol across multiple timeframes with weighted signals
-    
-    Parameters:
-    - symbol (str): The trading symbol to analyze
-    - timeframes (list): List of timeframes to analyze
-    - weights (dict): Dictionary of weights for each timeframe
-    
-    Returns:
-    - dict: Signal strength information across timeframes with weighted scores
-    """
+    """Analyze a symbol across multiple timeframes with weighted signals"""
     signals = initialize_signals()
     
     print(f"\n=== Advanced Multi-Timeframe Analysis for {symbol} ===")
     
-    # Loop through each timeframe
+    # Analyze each timeframe
     for tf in timeframes:
-        # Get weight for this timeframe (default to 1.0 if not specified)
         weight = weights.get(tf, 1.0)
         signals['total_weight'] += weight
         
         print(f"\nAnalyzing {symbol} on {tf} timeframe (weight: {weight})...")
         
-        # Get historical data for this timeframe
-        df = get_historical_data(symbol, tf, bars_count=300)
-        if df is None or len(df) == 0:
-            print(f"No historical data available for {symbol} on {tf}")
+        # Get and prepare data
+        df = prepare_timeframe_data(symbol, tf)
+        if df is None:
             continue
-        
-        if len(df) < MA_MEDIUM + 5:
-            print(f"Not enough historical data for {symbol} on {tf}")
-            continue
-        
-        # Calculate indicators for this timeframe
-        df['ma_short'] = calculate_ama(df, MA_SHORT, AMA_FAST_EMA, AMA_SLOW_EMA) if USE_ADAPTIVE_MA else calculate_ma(df, MA_SHORT)
-        df['ma_medium'] = calculate_ama(df, MA_MEDIUM, AMA_FAST_EMA, AMA_SLOW_EMA) if USE_ADAPTIVE_MA else calculate_ma(df, MA_MEDIUM)
-        
-        if USE_RSI_FILTER and MTF_INDICATORS.get("RSI", True):
-            df['rsi'] = calculate_rsi(df, RSI_PERIOD)
-        
-        df = df.dropna()
-        
-        if len(df) < 10:
-            print(f"Not enough data points after calculating indicators for {symbol} on {tf}")
-            continue
-        
-        latest = df.iloc[-1]
-        prev = df.iloc[-2] if len(df) > 1 else latest
-        
-        # Initialize scores
-        buy_score = 0
-        sell_score = 0
-        
-        # === Check MA crossover if enabled ===
-        if MTF_INDICATORS.get("MA_CROSSOVER", True):
-            # MA alignment
-            if latest['ma_short'] > latest['ma_medium']:
-                buy_score += 1
-                # Fresh crossover (stronger signal)
-                if prev['ma_short'] <= prev['ma_medium']:
-                    buy_score += 0.5
-                    print(f"Fresh bullish crossover on {tf}!")
-                
-                # Price > MA_Short > MA_Medium (strongest alignment)
-                if latest['close'] > latest['ma_short'] and latest['ma_short'] > latest['ma_medium']:
-                    buy_score += 1
-                    print(f"Strong bullish alignment on {tf}")
-                    
-            elif latest['ma_short'] < latest['ma_medium']:
-                sell_score += 1
-                # Fresh crossover (stronger signal)
-                if prev['ma_short'] >= prev['ma_medium']:
-                    sell_score += 0.5
-                    print(f"Fresh bearish crossover on {tf}!")
-                
-                # Price < MA_Short < MA_Medium (strongest alignment)
-                if latest['close'] < latest['ma_short'] and latest['ma_short'] < latest['ma_medium']:
-                    sell_score += 1
-                    print(f"Strong bearish alignment on {tf}")
-        
-        # === Check RSI if enabled ===
-        if USE_RSI_FILTER and MTF_INDICATORS.get("RSI", True) and 'rsi' in df.columns:
-            rsi_value = latest['rsi']
             
-            # RSI oversold - bullish
-            if rsi_value <= RSI_OVERSOLD:
-                buy_score += 1
-                print(f"RSI oversold ({rsi_value:.1f}) on {tf} - bullish")
-            # RSI overbought - bearish  
-            elif rsi_value >= RSI_OVERBOUGHT:
-                sell_score += 1
-                print(f"RSI overbought ({rsi_value:.1f}) on {tf} - bearish")
-            # RSI trending up from near oversold
-            elif rsi_value < 40 and rsi_value > RSI_OVERSOLD and rsi_value > prev.get('rsi', rsi_value):
-                buy_score += 0.5
-                print(f"RSI trending up from near oversold on {tf}")
-            # RSI trending down from near overbought
-            elif rsi_value > 60 and rsi_value < RSI_OVERBOUGHT and rsi_value < prev.get('rsi', rsi_value):
-                sell_score += 0.5
-                print(f"RSI trending down from near overbought on {tf}")
-        
-        # === Check price patterns if enabled ===
-        if USE_PRICE_ACTION and MTF_INDICATORS.get("PRICE_ACTION", True):
-            patterns = detect_price_patterns(df)
+        # Calculate signals for this timeframe
+        tf_signals = calculate_timeframe_signals(df, tf, weight)
+        if tf_signals is None:
+            continue
             
-            # Analyze bullish patterns
-            if patterns.get('hammer', False):
-                buy_score += 0.5
-                print(f"Bullish hammer pattern on {tf}")
-            if patterns.get('support', False):
-                buy_score += 0.5
-                print(f"Price at support level on {tf}")
-            if patterns.get('engulfing', False) and latest['close'] > latest['open']:
-                buy_score += 0.5
-                print(f"Bullish engulfing pattern on {tf}")
-                
-            # Analyze bearish patterns
-            if patterns.get('resistance', False):
-                sell_score += 0.5
-                print(f"Price at resistance level on {tf}")
-            if patterns.get('pinbar', False) and latest['close'] < latest['open']:
-                sell_score += 0.5
-                print(f"Bearish pinbar pattern on {tf}")
-            if patterns.get('engulfing', False) and latest['close'] < latest['open']:
-                sell_score += 0.5
-                print(f"Bearish engulfing pattern on {tf}")
-        
-        # Determine signal for this timeframe
-        timeframe_signal = 'NEUTRAL'
-        if buy_score > sell_score:
-            timeframe_signal = 'BUY'
-            signals['weighted_buy_score'] += buy_score * weight
-        elif sell_score > buy_score:
-            timeframe_signal = 'SELL'
-            signals['weighted_sell_score'] += sell_score * weight
-        
-        # Store signals for this timeframe
-        signals['timeframe_signals'][tf] = {
-            'signal': timeframe_signal,
-            'buy_score': buy_score,
-            'sell_score': sell_score,
-            'weight': weight,
-            'weighted_buy': buy_score * weight,
-            'weighted_sell': sell_score * weight,
-            'ma_short': latest['ma_short'],
-            'ma_medium': latest['ma_medium'],
-            'close': latest['close'],
-            'rsi': latest.get('rsi', None)
-        }
-        
-        # Print signal summary for this timeframe
-        print(f"{tf} signal: {timeframe_signal} (Buy: {buy_score}, Sell: {sell_score}, Weight: {weight})")
+        # Update overall signals
+        if tf_signals['signal'] == 'BUY':
+            signals['weighted_buy_score'] += tf_signals['weighted_buy']
+        elif tf_signals['signal'] == 'SELL':
+            signals['weighted_sell_score'] += tf_signals['weighted_sell']
+            
+        # Store timeframe signals
+        signals['timeframe_signals'][tf] = tf_signals
+        print(f"{tf} signal: {tf_signals['signal']} (Buy: {tf_signals['buy_score']}, Sell: {tf_signals['sell_score']}, Weight: {weight})")
     
-    # Calculate weighted percentage scores
+    # Calculate final signals
     if signals['total_weight'] > 0:
         weighted_buy_percent = (signals['weighted_buy_score'] / signals['total_weight']) * 100
         weighted_sell_percent = (signals['weighted_sell_score'] / signals['total_weight']) * 100
         
-        # Determine overall signal based on weighted scores and threshold
         if weighted_buy_percent >= MTF_AGREEMENT_THRESHOLD and weighted_buy_percent > weighted_sell_percent:
             signals['overall_signal'] = 'BUY'
             signals['signal_strength'] = weighted_buy_percent
@@ -528,46 +547,73 @@ def initialize_mt5_connection(symbol):
         write_diagnostic_log(symbol, error_msg)
         return False
 
-def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
-    """Check for signals and execute trades with proper MT5 connection and risk management"""
-    # Get the profit manager from main.py
-    from main import pm
-    from mt5_helper import check_market_conditions, get_positions
+def check_cooldown(symbol, current_time):
+    """Check if the symbol is in cooldown period"""
+    if symbol in last_trade_times:
+        time_since_last_trade = current_time - last_trade_times[symbol]
+        if time_since_last_trade.total_seconds() < TRADE_COOLDOWN_MINUTES * 60:
+            write_diagnostic_log(symbol, f"Skipping trade - cooldown period active ({TRADE_COOLDOWN_MINUTES} minutes)")
+            return False
+    return True
+
+def handle_existing_positions(symbol, trade_signals, current_time):
+    """Handle any existing positions for the symbol"""
+    from mt5_helper import get_positions
+    positions = get_positions(symbol)
+    if positions:
+        write_diagnostic_log(symbol, f"Found existing positions for {symbol}. Analyzing conflicts...")
+        for pos in positions:
+            if (pos.type == 0 and trade_signals['overall_signal'] == 'SELL') or \
+               (pos.type == 1 and trade_signals['overall_signal'] == 'BUY'):
+                write_diagnostic_log(symbol, "Closing conflicting position before new trade")
+                close_all_positions(symbol)
+                last_trade_times[symbol] = current_time
+                return False
+    return True
+
+def calculate_trade_parameters(symbol, is_buy, df):
+    """Calculate trade parameters like lot size and pip values"""
+    lot_size, sl_pips = determine_lot(
+        symbol,
+        df,
+        is_buy_signal=is_buy,
+        risk_percent=1.0
+    )
     
-    # Validate initial conditions
-    if not validate_trading_conditions(symbol, risk_percent):
-        return
-    
-    # Get session parameters
-    current_session, effective_risk, use_rsi = get_session_parameters(risk_percent)
-    if current_session is None:
-        return
-    
-    print(f"\n=== Processing {symbol} ===")
-    
-    # Initialize MT5
-    if not initialize_mt5_connection(symbol):
-        return
-    
-    # Check profit target
-    if pm.target_reached:
-        print(f"Target already achieved - skipping trade for {symbol}")
-        return
-    
-    # Check market conditions
-    market_open = check_market_conditions(symbol)
-    print(f"Market status for {symbol}: {'OPEN' if market_open else 'CLOSED'}")
-    
-    # Get market data
+    tp_pips = SYMBOL_SETTINGS.get(symbol, {}).get("TP_PIPS", DEFAULT_TP_PIPS)
+    if tp_pips is None:
+        tp_multiplier = SYMBOL_SETTINGS.get(symbol, {}).get("TP_MULTIPLIER", 2.0)
+        tp_pips = int(sl_pips * tp_multiplier)
+        
+    return lot_size, sl_pips, tp_pips
+
+def execute_trade(symbol, is_buy, lot_size, sl_pips, tp_pips):
+    """Execute the trade with given parameters"""
+    try:
+        if is_buy:
+            print(f"Attempting to open BUY position for {symbol}:")
+            print(f"Lot Size: {lot_size}, SL: {sl_pips} pips, TP: {tp_pips} pips")
+            open_buy_order(symbol, lot_size, stop_loss_pips=sl_pips, take_profit_pips=tp_pips)
+        else:
+            print(f"Attempting to open SELL position for {symbol}:")
+            print(f"Lot Size: {lot_size}, SL: {sl_pips} pips, TP: {tp_pips} pips")
+            open_sell_order(symbol, lot_size, stop_loss_pips=sl_pips, take_profit_pips=tp_pips)
+    except Exception as e:
+        error_msg = f"Error executing order: {str(e)}"
+        print(error_msg)
+        write_diagnostic_log(symbol, error_msg)
+
+def prepare_market_data(symbol):
+    """Prepare market data and calculate indicators"""
     df = get_historical_data(symbol, TIMEFRAME, bars_count=300)
     if df is None or len(df) == 0:
         print(f"No historical data available for {symbol}")
-        return
-    
+        return None
+        
     if len(df) < MA_MEDIUM + 5:
         print(f"Not enough historical data for {symbol} (need at least {MA_MEDIUM + 5} bars)")
-        return
-    
+        return None
+        
     # Calculate indicators
     df['ma_short'] = calculate_ama(df, MA_SHORT)
     df['ma_medium'] = calculate_ama(df, MA_MEDIUM)
@@ -577,37 +623,53 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
     
     if len(df) < 10:
         print(f"Not enough data points after calculating AMAs for {symbol}")
+        return None
+        
+    return df
+
+def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
+    """Check for signals and execute trades with proper MT5 connection and risk management"""
+    from main import pm
+    from mt5_helper import check_market_conditions
+    
+    # Initial validations
+    if not validate_trading_conditions(symbol, risk_percent):
         return
         
-    latest = df.iloc[-1]
+    current_session, effective_risk, use_rsi = get_session_parameters(risk_percent)
+    if current_session is None:
+        return
+        
+    print(f"\n=== Processing {symbol} ===")
     
-    # Get multi-timeframe analysis
+    if not initialize_mt5_connection(symbol):
+        return
+        
+    if pm.target_reached:
+        print(f"Target already achieved - skipping trade for {symbol}")
+        return
+        
+    market_open = check_market_conditions(symbol)
+    print(f"Market status for {symbol}: {'OPEN' if market_open else 'CLOSED'}")
+    
+    # Prepare market data
+    df = prepare_market_data(symbol)
+    if df is None:
+        return
+        
+    # Get trading signals
     trade_signals = analyze_multiple_timeframes_weighted(symbol)
     write_diagnostic_log(symbol, f"Multi-timeframe analysis results: {trade_signals}")
     
-    # Execute trade if signal is strong enough
-    # Check cooldown period
+    # Check trading conditions
     current_time = datetime.now()
-    if symbol in last_trade_times:
-        time_since_last_trade = current_time - last_trade_times[symbol]
-        if time_since_last_trade.total_seconds() < TRADE_COOLDOWN_MINUTES * 60:
-            write_diagnostic_log(symbol, f"Skipping trade - cooldown period active ({TRADE_COOLDOWN_MINUTES} minutes)")
-            return
+    if not check_cooldown(symbol, current_time):
+        return
+        
+    if not handle_existing_positions(symbol, trade_signals, current_time):
+        return
     
-    # Check existing positions to prevent conflicts
-    positions = get_positions(symbol)
-    if positions:
-        write_diagnostic_log(symbol, f"Found existing positions for {symbol}. Analyzing conflicts...")
-        for pos in positions:
-            # If we have a position and get an opposing signal, close it instead of opening new one
-            if (pos.type == 0 and trade_signals['overall_signal'] == 'SELL') or \
-               (pos.type == 1 and trade_signals['overall_signal'] == 'BUY'):
-                write_diagnostic_log(symbol, "Closing conflicting position before new trade")
-                close_all_positions(symbol)
-                # Update cooldown timer after closing position
-                last_trade_times[symbol] = current_time
-                return  # Exit to prevent immediate re-entry
-    
+    # Process signals and execute trades
     if trade_signals['overall_signal'] != 'NEUTRAL' and trade_signals['signal_strength'] >= MTF_AGREEMENT_THRESHOLD:
         write_diagnostic_log(symbol, f"Strong {trade_signals['overall_signal']} signal detected ({trade_signals['signal_strength']}%)")
         is_buy = trade_signals['overall_signal'] == 'BUY'
@@ -618,37 +680,8 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
             print(f"No historical data available for {symbol}")
             return
             
-        # Calculate position size based on risk
-        lot_size, sl_pips = determine_lot(
-            symbol, 
-            df, 
-            is_buy_signal=is_buy, 
-            risk_percent=risk_percent
-        )
-        
-        # Calculate TP
-        tp_pips = SYMBOL_SETTINGS.get(symbol, {}).get("TP_PIPS", DEFAULT_TP_PIPS)
-        if tp_pips is None:
-            tp_multiplier = SYMBOL_SETTINGS.get(symbol, {}).get("TP_MULTIPLIER", 2.0)
-            tp_pips = int(sl_pips * tp_multiplier)
-            
-        # Execute trade based on signal
+        # Calculate and execute trade
+        lot_size, sl_pips, tp_pips = calculate_trade_parameters(symbol, is_buy, df)
         if market_open:
-            try:
-                # Update last trade time
-                last_trade_times[symbol] = current_time
-                
-                # Execute the trade
-                if is_buy:
-                    print(f"Attempting to open BUY position for {symbol}:")
-                    print(f"Lot Size: {lot_size}, SL: {sl_pips} pips, TP: {tp_pips} pips")
-                    open_buy_order(symbol, lot_size, stop_loss_pips=sl_pips, take_profit_pips=tp_pips)
-                else:
-                    print(f"Attempting to open SELL position for {symbol}:")
-                    print(f"Lot Size: {lot_size}, SL: {sl_pips} pips, TP: {tp_pips} pips")
-                    open_sell_order(symbol, lot_size, stop_loss_pips=sl_pips, take_profit_pips=tp_pips)
-                    
-            except Exception as e:
-                error_msg = f"Error executing order: {str(e)}"
-                print(error_msg)
-                write_diagnostic_log(symbol, error_msg)
+            last_trade_times[symbol] = current_time
+            execute_trade(symbol, is_buy, lot_size, sl_pips, tp_pips)
