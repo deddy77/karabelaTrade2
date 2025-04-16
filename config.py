@@ -3,7 +3,7 @@
 # ================================
 
 # Trading settings for multiple symbols
-SYMBOLS = ["EURUSD", "GBPUSD", "USDCAD", "AUDUSD" ]  # Trade all major pairs
+SYMBOLS = ["EURUSD", "AUDUSD", "GBPUSD", "USDCAD"]  # Trade all major pairs
 TIMEFRAME = "M5"  # Primary timeframe for execution (M1, M5, M15, M30, H1, H4, D1)
 
 # Pattern Settings
@@ -72,7 +72,9 @@ SESSION_PARAMS = {
     "Asian": {
         "risk_multiplier": 0.5,  # Lower risk during Asian session
         "use_rsi_filter": False,  # Don't use RSI filter
-        "max_spread": 30
+        "max_spread": 30,
+        "require_timeframe_agreement": True,  # Added: Require H1 and H4 agreement
+        "min_signal_strength": 85  # Added: Higher threshold during Asian session
     },
     "London": {
         "risk_multiplier": 1.0,
@@ -93,9 +95,9 @@ MARKET_OPEN_HOUR = 17  # 5PM
 
 # Moving Average settings
 USE_ADAPTIVE_MA = True
-MA_SHORT = 20  # Blue line (fast)
-MA_MEDIUM = 50  # Yellow line (medium)
-# MA_LONG = 200  # Purple line (slow)
+MA_MEDIUM = 50  # Medium line (AMA50)
+MA_LONG = 200  # Long line (AMA200)
+PRIMARY_SIGNAL = "AMA_CROSS"  # Use AMA200/AMA50 cross as primary signal
 
 # Adaptive MA settings
 AMA_FAST_EMA = 2

@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from ta.momentum import RSIIndicator
 from ta import add_all_ta_features
 import forex_factory_scrap
-from config import (SYMBOL, TIMEFRAME, MA_SHORT, MA_MEDIUM, 
+from config import (SYMBOL, TIMEFRAME, MA_MEDIUM, MA_LONG, 
                   USE_ADAPTIVE_MA, AMA_FAST_EMA, AMA_SLOW_EMA, SYMBOL_SETTINGS,
                   DEFAULT_TP_PIPS, RSI_PERIOD, RSI_OVERBOUGHT, RSI_OVERSOLD, USE_RSI_FILTER,
                   USE_PRICE_ACTION, MIN_PATTERN_BARS, SUPPORT_RESISTANCE_LOOKBACK,
@@ -133,8 +133,8 @@ def check_recent_crossovers(minutes_to_check=5, symbol=SYMBOL):
         print(f"Failed to get historical data for {symbol} recent crossover check")
         return
     
-    df['ma_short'] = calculate_ama(df, MA_SHORT)
-    df['ma_medium'] = calculate_ama(df, MA_MEDIUM)
+    df['ma_medium'] = calculate_ama(df, MA_MEDIUM)  # AMA50
+    df['ma_long'] = calculate_ama(df, MA_LONG)      # AMA200
     
     df = df.dropna()
     
@@ -161,16 +161,16 @@ def check_recent_crossovers(minutes_to_check=5, symbol=SYMBOL):
         current = recent_df.iloc[i]
         previous = recent_df.iloc[i-1]
         
-        # Golden Cross (AMA20 > AMA50)
-        if current['ma_short'] > current['ma_medium'] and previous['ma_short'] <= previous['ma_medium']:
-            print(f"\n*** RECENT GOLDEN CROSS DETECTED at {current['time']} ***")
-            print(f"AMA{MA_SHORT} crossed above AMA{MA_MEDIUM} at price: {current['close']}")
-            print(f"Previous bar: AMA{MA_SHORT}={previous['ma_short']:.5f}, AMA{MA_MEDIUM}={previous['ma_medium']:.5f}")
-            print(f"Current bar: AMA{MA_SHORT}={current['ma_short']:.5f}, AMA{MA_MEDIUM}={current['ma_medium']:.5f}")
+        # Golden Cross (AMA50 > AMA200)
+        if current['ma_medium'] > current['ma_long'] and previous['ma_medium'] <= previous['ma_long']:
+            print(f"\n*** GOLDEN CROSS DETECTED at {current['time']} ***")
+            print(f"AMA50 crossed above AMA200 at price: {current['close']}")
+            print(f"Previous bar: AMA50={previous['ma_medium']:.5f}, AMA200={previous['ma_long']:.5f}")
+            print(f"Current bar: AMA50={current['ma_medium']:.5f}, AMA200={current['ma_long']:.5f}")
             crossover_found = True
             
             latest = df.iloc[-1]
-            if latest['close'] > latest['ma_short'] and latest['ma_short'] > latest['ma_medium']:
+            if latest['close'] > latest['ma_medium'] and latest['ma_medium'] > latest['ma_long']:
                 print("Current price and AMA alignment is BULLISH")
                 if not has_buy_position(symbol):
                     # Get symbol-specific lot size
@@ -181,16 +181,16 @@ def check_recent_crossovers(minutes_to_check=5, symbol=SYMBOL):
             else:
                 print("Current price conditions do not confirm the bullish crossover")
         
-        # Death Cross (AMA20 < AMA50)
-        if current['ma_short'] < current['ma_medium'] and previous['ma_short'] >= previous['ma_medium']:
-            print(f"\n*** RECENT DEATH CROSS DETECTED at {current['time']} ***")
-            print(f"AMA{MA_SHORT} crossed below AMA{MA_MEDIUM} at price: {current['close']}")
-            print(f"Previous bar: AMA{MA_SHORT}={previous['ma_short']:.5f}, AMA{MA_MEDIUM}={previous['ma_medium']:.5f}")
-            print(f"Current bar: AMA{MA_SHORT}={current['ma_short']:.5f}, AMA{MA_MEDIUM}={current['ma_medium']:.5f}")
+        # Death Cross (AMA50 < AMA200)
+        if current['ma_medium'] < current['ma_long'] and previous['ma_medium'] >= previous['ma_long']:
+            print(f"\n*** DEATH CROSS DETECTED at {current['time']} ***")
+            print(f"AMA50 crossed below AMA200 at price: {current['close']}")
+            print(f"Previous bar: AMA50={previous['ma_medium']:.5f}, AMA200={previous['ma_long']:.5f}")
+            print(f"Current bar: AMA50={current['ma_medium']:.5f}, AMA200={current['ma_long']:.5f}")
             crossover_found = True
             
             latest = df.iloc[-1]
-            if latest['close'] < latest['ma_short'] and latest['ma_short'] < latest['ma_medium']:
+            if latest['close'] < latest['ma_medium'] and latest['ma_medium'] < latest['ma_long']:
                 print("Current price and AMA alignment is BEARISH")
                 if not has_sell_position(symbol):
                     # Get symbol-specific lot size
@@ -207,27 +207,31 @@ def check_recent_crossovers(minutes_to_check=5, symbol=SYMBOL):
 
 
 def analyze_ma_crossover(latest, prev, tf):
-    """Analyze moving average crossover signals"""
+    """Analyze moving average crossover signals using AMA200/AMA50"""
     buy_score = 0
     sell_score = 0
     
+    # Primary signal - AMA200 vs AMA50 position
     if MTF_INDICATORS.get("MA_CROSSOVER", True):
-        if latest['ma_short'] > latest['ma_medium']:
-            buy_score += 1
-            if prev['ma_short'] <= prev['ma_medium']:
-                buy_score += 0.5
-                print(f"Fresh bullish crossover on {tf}!")
-            if latest['close'] > latest['ma_short'] and latest['ma_short'] > latest['ma_medium']:
+        # Bullish setup: AMA50 > AMA200
+        if latest['ma_medium'] > latest['ma_long']:
+            buy_score += 2  # Higher weight for primary signal
+            if prev['ma_medium'] <= prev['ma_long']:
                 buy_score += 1
-                print(f"Strong bullish alignment on {tf}")
-        elif latest['ma_short'] < latest['ma_medium']:
-            sell_score += 1
-            if prev['ma_short'] >= prev['ma_medium']:
-                sell_score += 0.5
-                print(f"Fresh bearish crossover on {tf}!")
-            if latest['close'] < latest['ma_short'] and latest['ma_short'] < latest['ma_medium']:
+                print(f"🟢 AMA50 crossed above AMA200 on {tf} - Primary Buy Signal!")
+            if latest['close'] > latest['ma_medium']:
+                buy_score += 0.5
+                print(f"Price above AMA50 on {tf} - Bullish confirmation")
+                
+        # Bearish setup: AMA50 < AMA200
+        elif latest['ma_medium'] < latest['ma_long']:
+            sell_score += 2  # Higher weight for primary signal
+            if prev['ma_medium'] >= prev['ma_long']:
                 sell_score += 1
-                print(f"Strong bearish alignment on {tf}")
+                print(f"🔴 AMA50 crossed below AMA200 on {tf} - Primary Sell Signal!")
+            if latest['close'] < latest['ma_medium']:
+                sell_score += 0.5
+                print(f"Price below AMA50 on {tf} - Bearish confirmation")
                 
     return buy_score, sell_score
 
@@ -321,26 +325,27 @@ def calculate_timeframe_signals(df, tf, weight):
         'weight': weight,
         'weighted_buy': buy_score * weight,
         'weighted_sell': sell_score * weight,
-        'ma_short': latest['ma_short'],
-        'ma_medium': latest['ma_medium'],
+        'ma_medium': latest['ma_medium'],  # AMA50
+        'ma_long': latest['ma_long'],      # AMA200
         'close': latest['close'],
         'rsi': latest.get('rsi', None)
     }
 
 def prepare_timeframe_data(symbol, tf):
     """Prepare indicator data for a timeframe"""
-    df = get_historical_data(symbol, tf, bars_count=300)
+    # Need more bars for AMA200
+    df = get_historical_data(symbol, tf, bars_count=400)
     if df is None or len(df) == 0:
         print(f"No historical data available for {symbol} on {tf}")
         return None
         
-    if len(df) < MA_MEDIUM + 5:
+    if len(df) < MA_LONG + 5:
         print(f"Not enough historical data for {symbol} on {tf}")
         return None
         
     # Calculate indicators
-    df['ma_short'] = calculate_ama(df, MA_SHORT, AMA_FAST_EMA, AMA_SLOW_EMA) if USE_ADAPTIVE_MA else calculate_ma(df, MA_SHORT)
     df['ma_medium'] = calculate_ama(df, MA_MEDIUM, AMA_FAST_EMA, AMA_SLOW_EMA) if USE_ADAPTIVE_MA else calculate_ma(df, MA_MEDIUM)
+    df['ma_long'] = calculate_ama(df, MA_LONG, AMA_FAST_EMA, AMA_SLOW_EMA) if USE_ADAPTIVE_MA else calculate_ma(df, MA_LONG)
     
     if USE_RSI_FILTER and MTF_INDICATORS.get("RSI", True):
         df['rsi'] = calculate_rsi(df, RSI_PERIOD)
@@ -350,6 +355,12 @@ def prepare_timeframe_data(symbol, tf):
 def analyze_multiple_timeframes_weighted(symbol, timeframes=ANALYSIS_TIMEFRAMES, weights=MTF_WEIGHTS):
     """Analyze a symbol across multiple timeframes with weighted signals"""
     signals = initialize_signals()
+    
+    # Get current session parameters
+    current_session, _, _ = get_session_parameters(1.0)
+    session_params = SESSION_PARAMS.get(current_session, {})
+    require_agreement = session_params.get('require_timeframe_agreement', False)
+    min_signal_strength = session_params.get('min_signal_strength', MTF_AGREEMENT_THRESHOLD)
     
     print(f"\n=== Advanced Multi-Timeframe Analysis for {symbol} ===")
     
@@ -385,10 +396,23 @@ def analyze_multiple_timeframes_weighted(symbol, timeframes=ANALYSIS_TIMEFRAMES,
         weighted_buy_percent = (signals['weighted_buy_score'] / signals['total_weight']) * 100
         weighted_sell_percent = (signals['weighted_sell_score'] / signals['total_weight']) * 100
         
-        if weighted_buy_percent >= MTF_AGREEMENT_THRESHOLD and weighted_buy_percent > weighted_sell_percent:
+        # Check for timeframe agreement if required
+        if require_agreement:
+            h1_signal = signals['timeframe_signals'].get('H1', {}).get('signal', 'NEUTRAL')
+            h4_signal = signals['timeframe_signals'].get('H4', {}).get('signal', 'NEUTRAL')
+            timeframes_agree = h1_signal == h4_signal
+            
+            if not timeframes_agree:
+                print(f"Timeframe agreement required but H1 ({h1_signal}) and H4 ({h4_signal}) disagree")
+                signals['overall_signal'] = 'NEUTRAL'
+                signals['signal_strength'] = 0
+                return signals
+            
+        # Process signals with appropriate threshold
+        if weighted_buy_percent >= min_signal_strength and weighted_buy_percent > weighted_sell_percent:
             signals['overall_signal'] = 'BUY'
             signals['signal_strength'] = weighted_buy_percent
-        elif weighted_sell_percent >= MTF_AGREEMENT_THRESHOLD and weighted_sell_percent > weighted_buy_percent:
+        elif weighted_sell_percent >= min_signal_strength and weighted_sell_percent > weighted_buy_percent:
             signals['overall_signal'] = 'SELL'
             signals['signal_strength'] = weighted_sell_percent
         else:
@@ -584,7 +608,7 @@ def calculate_trade_parameters(symbol, is_buy, df):
     if tp_pips is None:
         tp_multiplier = SYMBOL_SETTINGS.get(symbol, {}).get("TP_MULTIPLIER", 2.0)
         tp_pips = int(sl_pips * tp_multiplier)
-        
+    
     return lot_size, sl_pips, tp_pips
 
 def execute_trade(symbol, is_buy, lot_size, sl_pips, tp_pips):
@@ -605,24 +629,24 @@ def execute_trade(symbol, is_buy, lot_size, sl_pips, tp_pips):
 
 def prepare_market_data(symbol):
     """Prepare market data and calculate indicators"""
-    df = get_historical_data(symbol, TIMEFRAME, bars_count=300)
+    df = get_historical_data(symbol, TIMEFRAME, bars_count=400)  # Increased for AMA200
     if df is None or len(df) == 0:
         print(f"No historical data available for {symbol}")
         return None
         
-    if len(df) < MA_MEDIUM + 5:
-        print(f"Not enough historical data for {symbol} (need at least {MA_MEDIUM + 5} bars)")
+    if len(df) < MA_LONG + 5:
+        print(f"Not enough historical data for {symbol} (need at least {MA_LONG + 5} bars)")
         return None
         
     # Calculate indicators
-    df['ma_short'] = calculate_ama(df, MA_SHORT)
-    df['ma_medium'] = calculate_ama(df, MA_MEDIUM)
+    df['ma_medium'] = calculate_ama(df, MA_MEDIUM)  # AMA50
+    df['ma_long'] = calculate_ama(df, MA_LONG)      # AMA200
     if USE_RSI_FILTER:
         df['rsi'] = calculate_rsi(df, RSI_PERIOD)
     df = df.dropna()
     
     if len(df) < 10:
-        print(f"Not enough data points after calculating AMAs for {symbol}")
+        print(f"Not enough data points after calculating indicators for {symbol}")
         return None
         
     return df
