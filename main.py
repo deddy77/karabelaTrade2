@@ -4,6 +4,7 @@
 
 from strategy import check_signal_and_trade
 from mt5_helper import connect, shutdown, send_discord_notification, check_and_add_sltp, check_connection
+from exit_manager import exit_manager
 import time
 import traceback
 import MetaTrader5 as mt5
@@ -88,6 +89,15 @@ def main():
                         send_discord_notification(f"⚠️ ERROR: {error_msg}")
                         # Continue with next symbol
                         continue
+                
+                # Check and update exit levels for all symbols
+                try:
+                    print("\nUpdating exit levels for all positions...")
+                    exit_manager.check_all_symbols()
+                except Exception as exit_error:
+                    error_msg = f"Error updating exit levels: {str(exit_error)}"
+                    print(f"❌ {error_msg}")
+                    send_discord_notification(f"⚠️ EXIT ERROR: {error_msg}")
                 
                 time.sleep(sleep_time)
                 

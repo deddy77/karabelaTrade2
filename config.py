@@ -37,6 +37,14 @@ DEFAULT_RISK_PERCENT = 1.0  # 1% of balance risked per trade
 DEFAULT_TP_MULTIPLIER = 2.0  # Take profit as multiple of stop loss (fallback)
 DEFAULT_TP_PIPS = 5  # Fixed take profit in pips (override multiplier if set)
 
+# Exit Strategy Settings
+USE_TRAILING_STOP = True  # Enable trailing stop loss
+TRAILING_STOP_ACTIVATION_PIPS = 15  # Activate trailing stop when profit reaches this many pips
+TRAILING_STOP_DISTANCE_PIPS = 10  # Distance to maintain for trailing stop
+USE_DYNAMIC_TP = True  # Enable dynamic take profit based on market conditions
+DYNAMIC_TP_ATR_MULTIPLIER = 3.0  # Multiplier for ATR to set dynamic take profit
+CHECK_EXIT_INTERVAL = 60  # Check and update exit levels every 60 seconds
+
 # Daily settings
 DAILY_PROFIT_TARGET = 50  # Stop when $50 profit made
 DAILY_MAX_LOSS = -30      # Optional: Stop if $30 loss
@@ -93,6 +101,13 @@ USE_ADAPTIVE_MA = True
 MA_MEDIUM = 50  # Medium line (AMA50)
 MA_LONG = 200  # Long line (AMA200)
 PRIMARY_SIGNAL = "AMA_CROSS"  # Use AMA200/AMA50 cross as primary signal
+MIN_AMA_GAP_PERCENT = 0.05  # Minimum gap between AMA50 and AMA200 (as percentage)
+
+# Trend Strength Indicators
+USE_ADX_FILTER = True  # Enable ADX trend strength filter
+ADX_PERIOD = 14  # Period for ADX calculation
+ADX_THRESHOLD = 25  # Minimum ADX value for strong trend (25+ is traditional threshold)
+ADX_EXTREME = 50  # Extreme ADX value indicating very strong trend
 
 # Adaptive MA settings
 AMA_FAST_EMA = 2
