@@ -54,6 +54,19 @@ def main():
             try:
                 # Check profit status
                 account_info = mt5.account_info()
+                if account_info is None:
+                    print("❌ Failed to get account info. Attempting to reconnect...")
+                    if not connect():
+                        print("Failed to reconnect to MT5. Waiting for next cycle...")
+                        time.sleep(sleep_time)
+                        continue
+                    print("Successfully reconnected to MT5.")
+                    # Try to get account info again after reconnection
+                    account_info = mt5.account_info()
+                    if account_info is None:
+                        print("❌ Still unable to get account info after reconnection. Skipping profit update.")
+                        continue
+                
                 if not pm.update(account_info.balance):
                     print("Max daily loss hit! Stopping...")
                     break
