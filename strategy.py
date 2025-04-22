@@ -379,20 +379,256 @@ def detect_swing_points(df, left_bars=3, right_bars=3):
             
     return swings
 
+def detect_harmonic_patterns(df, tolerance=0.05):
+    """
+    Detect harmonic price patterns (Gartley, Butterfly, Bat, Crab)
+    tolerance: Allowable deviation from exact Fibonacci ratios (e.g., 0.05 = 5%)
+    """
+    patterns = {
+        'gartley': {'bullish': False, 'bearish': False, 'points': None},
+        'butterfly': {'bullish': False, 'bearish': False, 'points': None},
+        'bat': {'bullish': False, 'bearish': False, 'points': None},
+        'crab': {'bullish': False, 'bearish': False, 'points': None}
+    }
+    
+    try:
+        # Get recent swing points
+        swings = detect_swing_points(df)
+        highs = swings['highs']
+        lows = swings['lows']
+        
+        if len(highs) < 2 or len(lows) < 2:
+            return patterns
+            
+        # Get latest 5 swing points for pattern detection
+        points = []
+        all_swings = sorted(highs + lows, key=lambda x: x[0])  # Sort by time
+        points = all_swings[-5:] if len(all_swings) >= 5 else []
+        
+        if len(points) < 5:
+            return patterns
+            
+        # Extract XABCD points
+        X = points[0][1]
+        A = points[1][1]
+        B = points[2][1]
+        C = points[3][1]
+        D = points[4][1]
+        
+        # Calculate retracement ratios
+        AB = abs(B - A)
+        BC = abs(C - B)
+        CD = abs(D - C)
+        XA = abs(A - X)
+        
+        # Gartley Pattern
+        gartley_ratios = {
+            'XB': 0.618,  # XA to AB retracement
+            'BC': 0.382,  # AB to BC retracement
+            'CD': 1.272,  # BC to CD extension
+            'AD': 0.786   # XA to AD retracement
+        }
+        
+        # Butterfly Pattern
+        butterfly_ratios = {
+            'XB': 0.786,
+            'BC': 0.382,
+            'CD': 1.618,
+            'AD': 1.27
+        }
+        
+        # Bat Pattern
+        bat_ratios = {
+            'XB': 0.382,
+            'BC': 0.382,
+            'CD': 2.618,
+            'AD': 0.886
+        }
+        
+        # Crab Pattern
+        crab_ratios = {
+            'XB': 0.382,
+            'BC': 0.618,
+            'CD': 3.618,
+            'AD': 1.618
+        }
+        
+        def is_within_tolerance(actual, expected, tolerance):
+            return abs(actual - expected) <= tolerance
+        
+        # Check for bullish patterns
+        if D < X:  # Potential bullish pattern
+            # Gartley
+            if (is_within_tolerance(abs(B - X) / XA, gartley_ratios['XB'], tolerance) and
+                is_within_tolerance(BC / AB, gartley_ratios['BC'], tolerance) and
+                is_within_tolerance(CD / BC, gartley_ratios['CD'], tolerance) and
+                is_within_tolerance(abs(D - X) / XA, gartley_ratios['AD'], tolerance)):
+                patterns['gartley']['bullish'] = True
+                patterns['gartley']['points'] = [X, A, B, C, D]
+            
+            # Butterfly
+            if (is_within_tolerance(abs(B - X) / XA, butterfly_ratios['XB'], tolerance) and
+                is_within_tolerance(BC / AB, butterfly_ratios['BC'], tolerance) and
+                is_within_tolerance(CD / BC, butterfly_ratios['CD'], tolerance) and
+                is_within_tolerance(abs(D - X) / XA, butterfly_ratios['AD'], tolerance)):
+                patterns['butterfly']['bullish'] = True
+                patterns['butterfly']['points'] = [X, A, B, C, D]
+            
+            # Bat
+            if (is_within_tolerance(abs(B - X) / XA, bat_ratios['XB'], tolerance) and
+                is_within_tolerance(BC / AB, bat_ratios['BC'], tolerance) and
+                is_within_tolerance(CD / BC, bat_ratios['CD'], tolerance) and
+                is_within_tolerance(abs(D - X) / XA, bat_ratios['AD'], tolerance)):
+                patterns['bat']['bullish'] = True
+                patterns['bat']['points'] = [X, A, B, C, D]
+            
+            # Crab
+            if (is_within_tolerance(abs(B - X) / XA, crab_ratios['XB'], tolerance) and
+                is_within_tolerance(BC / AB, crab_ratios['BC'], tolerance) and
+                is_within_tolerance(CD / BC, crab_ratios['CD'], tolerance) and
+                is_within_tolerance(abs(D - X) / XA, crab_ratios['AD'], tolerance)):
+                patterns['crab']['bullish'] = True
+                patterns['crab']['points'] = [X, A, B, C, D]
+        
+        # Check for bearish patterns
+        elif D > X:  # Potential bearish pattern
+            # Gartley
+            if (is_within_tolerance(abs(B - X) / XA, gartley_ratios['XB'], tolerance) and
+                is_within_tolerance(BC / AB, gartley_ratios['BC'], tolerance) and
+                is_within_tolerance(CD / BC, gartley_ratios['CD'], tolerance) and
+                is_within_tolerance(abs(D - X) / XA, gartley_ratios['AD'], tolerance)):
+                patterns['gartley']['bearish'] = True
+                patterns['gartley']['points'] = [X, A, B, C, D]
+            
+            # Butterfly
+            if (is_within_tolerance(abs(B - X) / XA, butterfly_ratios['XB'], tolerance) and
+                is_within_tolerance(BC / AB, butterfly_ratios['BC'], tolerance) and
+                is_within_tolerance(CD / BC, butterfly_ratios['CD'], tolerance) and
+                is_within_tolerance(abs(D - X) / XA, butterfly_ratios['AD'], tolerance)):
+                patterns['butterfly']['bearish'] = True
+                patterns['butterfly']['points'] = [X, A, B, C, D]
+            
+            # Bat
+            if (is_within_tolerance(abs(B - X) / XA, bat_ratios['XB'], tolerance) and
+                is_within_tolerance(BC / AB, bat_ratios['BC'], tolerance) and
+                is_within_tolerance(CD / BC, bat_ratios['CD'], tolerance) and
+                is_within_tolerance(abs(D - X) / XA, bat_ratios['AD'], tolerance)):
+                patterns['bat']['bearish'] = True
+                patterns['bat']['points'] = [X, A, B, C, D]
+            
+            # Crab
+            if (is_within_tolerance(abs(B - X) / XA, crab_ratios['XB'], tolerance) and
+                is_within_tolerance(BC / AB, crab_ratios['BC'], tolerance) and
+                is_within_tolerance(CD / BC, crab_ratios['CD'], tolerance) and
+                is_within_tolerance(abs(D - X) / XA, crab_ratios['AD'], tolerance)):
+                patterns['crab']['bearish'] = True
+                patterns['crab']['points'] = [X, A, B, C, D]
+        
+        return patterns
+        
+    except Exception as e:
+        print(f"Error detecting harmonic patterns: {str(e)}")
+        return patterns
+
+def detect_breakout(df, lookback=20, volume_confirm=True):
+    """
+    Detect and validate breakout patterns with price action confirmation
+    Returns: dict with breakout details and confirmation levels
+    """
+    breakout = {
+        'detected': False,
+        'direction': None,  # 'UP' or 'DOWN'
+        'price_level': None,
+        'strength': 0,  # 0-100 score
+        'volume_confirmed': False,
+        'retested': False
+    }
+    
+    try:
+        # Need at least lookback + 5 bars for analysis
+        if len(df) < lookback + 5:
+            return breakout
+            
+        # Calculate recent highs and lows
+        recent_highs = df['high'].rolling(window=3).max()
+        recent_lows = df['low'].rolling(window=3).min()
+        
+        # Get current and previous prices
+        current_price = df['close'].iloc[-1]
+        prev_price = df['close'].iloc[-2]
+        
+        # Identify resistance and support levels
+        resistance_level = recent_highs.iloc[-lookback:-1].max()
+        support_level = recent_lows.iloc[-lookback:-1].min()
+        
+        # Check for resistance breakout
+        if current_price > resistance_level and prev_price <= resistance_level:
+            breakout['detected'] = True
+            breakout['direction'] = 'UP'
+            breakout['price_level'] = resistance_level
+            
+            # Volume confirmation
+            if volume_confirm and 'tick_volume' in df.columns:
+                avg_volume = df['tick_volume'].iloc[-lookback:-1].mean()
+                current_volume = df['tick_volume'].iloc[-1]
+                breakout['volume_confirmed'] = current_volume > avg_volume * 1.5
+            
+            # Calculate breakout strength
+            price_distance = (current_price - resistance_level) / resistance_level * 100
+            breakout['strength'] = min(100, int(price_distance * 20))  # Scale up to 100
+            
+            # Check for retest
+            recent_min = df['low'].iloc[-3:].min()
+            breakout['retested'] = resistance_level - recent_min < resistance_level * 0.001
+            
+        # Check for support breakout (breakdown)
+        elif current_price < support_level and prev_price >= support_level:
+            breakout['detected'] = True
+            breakout['direction'] = 'DOWN'
+            breakout['price_level'] = support_level
+            
+            # Volume confirmation
+            if volume_confirm and 'tick_volume' in df.columns:
+                avg_volume = df['tick_volume'].iloc[-lookback:-1].mean()
+                current_volume = df['tick_volume'].iloc[-1]
+                breakout['volume_confirmed'] = current_volume > avg_volume * 1.5
+            
+            # Calculate breakout strength
+            price_distance = (support_level - current_price) / support_level * 100
+            breakout['strength'] = min(100, int(price_distance * 20))
+            
+            # Check for retest
+            recent_max = df['high'].iloc[-3:].max()
+            breakout['retested'] = recent_max - support_level < support_level * 0.001
+            
+        return breakout
+        
+    except Exception as e:
+        print(f"Error detecting breakout: {str(e)}")
+        return breakout
+
 def detect_price_patterns(df, lookback=20):
-    """Detect common price action patterns"""
+    """Detect common price action patterns and candlestick formations"""
     patterns = {
         'support': False,
         'resistance': False,
         'dynamic_support': None,
         'dynamic_resistance': None,
         'hammer': False,
+        'shooting_star': False,
         'engulfing': False,
         'pinbar': False,
+        'doji': False,
+        'morning_star': False,
+        'evening_star': False,
+        'three_white_soldiers': False,
+        'three_black_crows': False,
         'higher_high': False,
         'higher_low': False,
         'lower_high': False,
-        'lower_low': False
+        'lower_low': False,
+        'inside_bar': False,
+        'outside_bar': False
     }
     
     if len(df) < lookback:
@@ -450,41 +686,101 @@ def detect_price_patterns(df, lookback=20):
     # Resistance - price bouncing off recent highs
     patterns['resistance'] = any(abs(current_high - high) < 0.0005 for high in recent_highs)
     
-    # Candlestick patterns (last 3 bars)
+    # Candlestick patterns
     if len(df) >= 3:
         prev2 = df.iloc[-3]
         prev1 = df.iloc[-2]
         curr = df.iloc[-1]
         
-        # Hammer pattern
-        body_size = abs(curr['open'] - curr['close'])
+        # Calculate body and wick sizes
+        body_size = abs(curr['close'] - curr['open'])
         lower_wick = min(curr['open'], curr['close']) - curr['low']
         upper_wick = curr['high'] - max(curr['open'], curr['close'])
         
+        # Doji pattern (very small body)
+        avg_body = df['close'].rolling(window=20).apply(lambda x: abs(x - x.shift(1))).mean()
+        patterns['doji'] = body_size < (avg_body * 0.1) and (upper_wick + lower_wick) > (3 * body_size)
+        
+        # Hammer pattern (bullish)
         patterns['hammer'] = (
             lower_wick > 2 * body_size and 
             upper_wick < body_size * 0.5 and
-            curr['close'] > curr['open']  # Bullish hammer
+            curr['close'] > curr['open'] and  # Bullish hammer
+            curr['close'] > prev1['close']    # Confirming upward movement
         )
         
-        # Engulfing pattern
-        patterns['engulfing'] = (
-            (prev1['close'] < prev1['open'] and  # Previous bearish
-             curr['close'] > curr['open'] and    # Current bullish
-             curr['open'] < prev1['close'] and
-             curr['close'] > prev1['open']) or
-            (prev1['close'] > prev1['open'] and  # Previous bullish
-             curr['close'] < curr['open'] and    # Current bearish
-             curr['open'] > prev1['close'] and
-             curr['close'] < prev1['open'])
+        # Shooting Star pattern (bearish)
+        patterns['shooting_star'] = (
+            upper_wick > 2 * body_size and
+            lower_wick < body_size * 0.5 and
+            curr['close'] < curr['open'] and  # Bearish
+            curr['close'] < prev1['close']    # Confirming downward movement
         )
         
-        # Pinbar pattern
-        patterns['pinbar'] = (
-            (upper_wick > 2 * body_size and 
-             lower_wick < body_size * 0.5) or
-            (lower_wick > 2 * body_size and
-             upper_wick < body_size * 0.5)
+        # Engulfing patterns with volume confirmation
+        if 'tick_volume' in df.columns:
+            vol_increase = curr['tick_volume'] > prev1['tick_volume'] * 1.2  # 20% volume increase
+            patterns['engulfing'] = (
+                # Bullish engulfing
+                (prev1['close'] < prev1['open'] and    # Previous bearish
+                 curr['close'] > curr['open'] and      # Current bullish
+                 curr['open'] < prev1['close'] and     # Opens below
+                 curr['close'] > prev1['open'] and     # Closes above
+                 vol_increase) or                      # Higher volume
+                # Bearish engulfing
+                (prev1['close'] > prev1['open'] and    # Previous bullish
+                 curr['close'] < curr['open'] and      # Current bearish
+                 curr['open'] > prev1['close'] and     # Opens above
+                 curr['close'] < prev1['open'] and     # Closes below
+                 vol_increase)                         # Higher volume
+            )
+        
+        # Morning Star pattern (bullish reversal)
+        if len(df) >= 4:
+            patterns['morning_star'] = (
+                prev2['close'] < prev2['open'] and     # First bar bearish
+                abs(prev1['close'] - prev1['open']) < avg_body * 0.5 and  # Small middle bar
+                curr['close'] > curr['open'] and       # Third bar bullish
+                curr['close'] > (prev2['open'] + prev2['close']) / 2      # Closes above midpoint of first bar
+            )
+        
+        # Evening Star pattern (bearish reversal)
+        if len(df) >= 4:
+            patterns['evening_star'] = (
+                prev2['close'] > prev2['open'] and     # First bar bullish
+                abs(prev1['close'] - prev1['open']) < avg_body * 0.5 and  # Small middle bar
+                curr['close'] < curr['open'] and       # Third bar bearish
+                curr['close'] < (prev2['open'] + prev2['close']) / 2      # Closes below midpoint of first bar
+            )
+        
+        # Three White Soldiers (bullish continuation)
+        if len(df) >= 4:
+            patterns['three_white_soldiers'] = all(
+                df.iloc[i]['close'] > df.iloc[i]['open'] and              # All bullish
+                df.iloc[i]['close'] > df.iloc[i-1]['close'] and          # Each closes higher
+                df.iloc[i]['open'] > df.iloc[i-1]['open']                # Each opens higher
+                for i in range(-3, 0)
+            )
+        
+        # Three Black Crows (bearish continuation)
+        if len(df) >= 4:
+            patterns['three_black_crows'] = all(
+                df.iloc[i]['close'] < df.iloc[i]['open'] and              # All bearish
+                df.iloc[i]['close'] < df.iloc[i-1]['close'] and          # Each closes lower
+                df.iloc[i]['open'] < df.iloc[i-1]['open']                # Each opens lower
+                for i in range(-3, 0)
+            )
+        
+        # Inside Bar pattern
+        patterns['inside_bar'] = (
+            curr['high'] < prev1['high'] and
+            curr['low'] > prev1['low']
+        )
+        
+        # Outside Bar pattern
+        patterns['outside_bar'] = (
+            curr['high'] > prev1['high'] and
+            curr['low'] < prev1['low']
         )
     
     return patterns
@@ -706,12 +1002,51 @@ def analyze_rsi(latest, prev, tf):
     return buy_score, sell_score
 
 def analyze_price_patterns(df, latest, tf):
-    """Analyze price action patterns"""
+    """Analyze price action patterns including harmonic patterns and breakouts"""
     buy_score = 0
     sell_score = 0
     
     if USE_PRICE_ACTION and MTF_INDICATORS.get("PRICE_ACTION", True):
+        # Detect regular price patterns
         patterns = detect_price_patterns(df)
+        
+        # Detect harmonic patterns
+        harmonic_patterns = detect_harmonic_patterns(df)
+        
+        # Detect breakouts
+        breakout = detect_breakout(df)
+        if breakout['detected']:
+            if breakout['direction'] == 'UP':
+                buy_score += 2.0  # Strong weight for confirmed breakouts
+                print(f"🚀 Bullish breakout detected on {tf}")
+                print(f"Breakout level: {breakout['price_level']:.5f}")
+                print(f"Strength: {breakout['strength']}%")
+                if breakout['volume_confirmed']:
+                    buy_score += 0.5
+                    print("Volume confirms breakout")
+                if breakout['retested']:
+                    buy_score += 0.5
+                    print("Breakout level retested - bullish confirmation")
+            else:  # 'DOWN'
+                sell_score += 2.0
+                print(f"💥 Bearish breakdown detected on {tf}")
+                print(f"Breakdown level: {breakout['price_level']:.5f}")
+                print(f"Strength: {breakout['strength']}%")
+                if breakout['volume_confirmed']:
+                    sell_score += 0.5
+                    print("Volume confirms breakdown")
+                if breakout['retested']:
+                    sell_score += 0.5
+                    print("Breakdown level retested - bearish confirmation")
+        
+        # Check for bullish harmonic patterns
+        for pattern_name, pattern_data in harmonic_patterns.items():
+            if pattern_data['bullish']:
+                buy_score += 1.5  # Higher weight for harmonic patterns
+                print(f"🟢 Bullish {pattern_name.capitalize()} pattern detected on {tf}")
+            elif pattern_data['bearish']:
+                sell_score += 1.5  # Higher weight for harmonic patterns
+                print(f"🔴 Bearish {pattern_name.capitalize()} pattern detected on {tf}")
         
         # Dynamic S/R scoring
         if USE_DYNAMIC_SR:
