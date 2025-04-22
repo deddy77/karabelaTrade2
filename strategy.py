@@ -185,18 +185,174 @@ def calculate_adx(df, period=14):
         print(f"Error calculating ADX: {str(e)}")
         return pd.Series([np.nan] * len(df), index=df.index)
 
+def detect_dynamic_sr_levels(df, lookback=50, min_touches=2, buffer_pips=3):
+    """Identify dynamic support/resistance levels based on recent price action"""
+    buffer = buffer_pips * 0.0001  # Convert pips to price level
+    levels = {'supports': [], 'resistances': []}
+    
+    # Get recent price data
+    recent_df = df.tail(lookback)
+    
+    # Find potential support levels (clusters of lows)
+    low_clusters = []
+    current_cluster = []
+    
+    for i in range(len(recent_df)):
+        current_low = recent_df['low'].iloc[i]
+        
+        # Check if price is near any existing cluster
+        found_cluster = False
+        for cluster in low_clusters:
+            if any(abs(current_low - x) <= buffer for x in cluster):
+                cluster.append(current_low)
+                found_cluster = True
+                break
+                
+        if not found_cluster:
+            # Check if price is near any price in current cluster
+            if current_cluster and any(abs(current_low - x) <= buffer for x in current_cluster):
+                current_cluster.append(current_low)
+            else:
+                if len(current_cluster) >= min_touches:
+                    low_clusters.append(current_cluster)
+                current_cluster = [current_low]
+    
+    # Add last cluster if valid
+    if len(current_cluster) >= min_touches:
+        low_clusters.append(current_cluster)
+    
+    # Calculate support levels as average of clusters
+    for cluster in low_clusters:
+        if len(cluster) >= min_touches:
+            levels['supports'].append(sum(cluster)/len(cluster))
+    
+    # Repeat for resistance levels (clusters of highs)
+    high_clusters = []
+    current_cluster = []
+    
+    for i in range(len(recent_df)):
+        current_high = recent_df['high'].iloc[i]
+        
+        # Check if price is near any existing cluster
+        found_cluster = False
+        for cluster in high_clusters:
+            if any(abs(current_high - x) <= buffer for x in cluster):
+                cluster.append(current_high)
+                found_cluster = True
+                break
+                
+        if not found_cluster:
+            # Check if price is near any price in current cluster
+            if current_cluster and any(abs(current_high - x) <= buffer for x in current_cluster):
+                current_cluster.append(current_high)
+            else:
+                if len(current_cluster) >= min_touches:
+                    high_clusters.append(current_cluster)
+                current_cluster = [current_high]
+    
+    # Add last cluster if valid
+    if len(current_cluster) >= min_touches:
+        high_clusters.append(current_cluster)
+    
+    # Calculate resistance levels as average of clusters
+    for cluster in high_clusters:
+        if len(cluster) >= min_touches:
+            levels['resistances'].append(sum(cluster)/len(cluster))
+    
+    return levels
+
+def detect_swing_points(df, left_bars=3, right_bars=3):
+    """Detect swing highs and lows in price data"""
+    swings = {'highs': [], 'lows': []}
+    
+    for i in range(left_bars, len(df)-right_bars):
+        # Check for swing high
+        is_high = True
+        for j in range(1, left_bars+1):
+            if df['high'].iloc[i] < df['high'].iloc[i-j]:
+                is_high = False
+                break
+        if is_high:
+            for j in range(1, right_bars+1):
+                if df['high'].iloc[i] < df['high'].iloc[i+j]:
+                    is_high = False
+                    break
+        if is_high:
+            swings['highs'].append((df.index[i], df['high'].iloc[i]))
+            
+        # Check for swing low
+        is_low = True
+        for j in range(1, left_bars+1):
+            if df['low'].iloc[i] > df['low'].iloc[i-j]:
+                is_low = False
+                break
+        if is_low:
+            for j in range(1, right_bars+1):
+                if df['low'].iloc[i] > df['low'].iloc[i+j]:
+                    is_low = False
+                    break
+        if is_low:
+            swings['lows'].append((df.index[i], df['low'].iloc[i]))
+            
+    return swings
+
 def detect_price_patterns(df, lookback=20):
     """Detect common price action patterns"""
     patterns = {
         'support': False,
         'resistance': False,
+        'dynamic_support': None,
+        'dynamic_resistance': None,
         'hammer': False,
         'engulfing': False,
-        'pinbar': False
+        'pinbar': False,
+        'higher_high': False,
+        'higher_low': False,
+        'lower_high': False,
+        'lower_low': False
     }
     
     if len(df) < lookback:
         return patterns
+    
+    # Dynamic S/R levels
+    if USE_DYNAMIC_SR:
+        dynamic_levels = detect_dynamic_sr_levels(
+            df, 
+            DYNAMIC_SR_LOOKBACK, 
+            DYNAMIC_SR_MIN_TOUCHES, 
+            DYNAMIC_SR_BUFFER_PIPS
+        )
+        
+        current_price = df['close'].iloc[-1]
+        buffer = DYNAMIC_SR_BUFFER_PIPS * 0.0001
+        
+        # Check dynamic supports
+        for level in dynamic_levels['supports']:
+            if abs(current_price - level) <= buffer:
+                patterns['dynamic_support'] = level
+                break
+                
+        # Check dynamic resistances
+        for level in dynamic_levels['resistances']:
+            if abs(current_price - level) <= buffer:
+                patterns['dynamic_resistance'] = level
+                break
+    
+    # Swing point analysis
+    if USE_SWING_POINTS:
+        swings = detect_swing_points(df, SWING_LEFT_BARS, SWING_RIGHT_BARS)
+        if len(swings['highs']) >= 2 and len(swings['lows']) >= 2:
+            # Check for higher highs/lower lows
+            last_high = swings['highs'][-1][1]
+            prev_high = swings['highs'][-2][1]
+            last_low = swings['lows'][-1][1]
+            prev_low = swings['lows'][-2][1]
+            
+            patterns['higher_high'] = last_high > prev_high
+            patterns['lower_high'] = last_high < prev_high
+            patterns['higher_low'] = last_low > prev_low
+            patterns['lower_low'] = last_low < prev_low
     
     # Support/Resistance detection
     recent_lows = df['low'].rolling(window=3).min().tail(lookback)
@@ -474,6 +630,36 @@ def analyze_price_patterns(df, latest, tf):
     if USE_PRICE_ACTION and MTF_INDICATORS.get("PRICE_ACTION", True):
         patterns = detect_price_patterns(df)
         
+        # Dynamic S/R scoring
+        if USE_DYNAMIC_SR:
+            if patterns.get('dynamic_support') is not None:
+                buy_score += 1.0
+                print(f"🟢 Price at dynamic support: {patterns['dynamic_support']:.5f} on {tf}")
+            if patterns.get('dynamic_resistance') is not None:
+                sell_score += 1.0
+                print(f"🔴 Price at dynamic resistance: {patterns['dynamic_resistance']:.5f} on {tf}")
+        
+        # Swing point analysis scoring
+        if USE_SWING_POINTS:
+            if patterns.get('higher_high', False) and patterns.get('higher_low', False):
+                buy_score += 1.5  # Strong uptrend confirmation
+                print(f"🟢 Uptrend confirmed (higher high + higher low) on {tf}")
+            elif patterns.get('lower_high', False) and patterns.get('lower_low', False):
+                sell_score += 1.5  # Strong downtrend confirmation
+                print(f"🔴 Downtrend confirmed (lower high + lower low) on {tf}")
+            elif patterns.get('higher_high', False):
+                buy_score += 0.5  # Potential uptrend
+                print(f"🟢 Higher high detected on {tf}")
+            elif patterns.get('higher_low', False):
+                buy_score += 0.5  # Potential uptrend continuation
+                print(f"🟢 Higher low detected on {tf}")
+            elif patterns.get('lower_high', False):
+                sell_score += 0.5  # Potential downtrend
+                print(f"🔴 Lower high detected on {tf}")
+            elif patterns.get('lower_low', False):
+                sell_score += 0.5  # Potential downtrend continuation
+                print(f"🔴 Lower low detected on {tf}")
+        
         # Bullish patterns
         if patterns.get('hammer', False):
             buy_score += 0.5
@@ -497,6 +683,134 @@ def analyze_price_patterns(df, latest, tf):
             print(f"Bearish engulfing pattern on {tf}")
             
     return buy_score, sell_score
+
+def calculate_pivot_points(df, pivot_type="STANDARD"):
+    """Calculate pivot points using daily data
+    Supported types: STANDARD, FIBONACCI, WOODIE, CAMARILLA, DEMARK"""
+    if len(df) < 1:
+        return None
+        
+    # Get high, low, close for previous day
+    high = df['high'].iloc[-1]
+    low = df['low'].iloc[-1]
+    close = df['close'].iloc[-1]
+    open_price = df['open'].iloc[-1] if 'open' in df else close
+    
+    # Common calculations
+    pivot = (high + low + close) / 3
+    pp_range = high - low
+    
+    if pivot_type == "STANDARD":
+        # Standard pivot points
+        return {
+            'P': pivot,
+            'R1': (2 * pivot) - low,
+            'R2': pivot + pp_range,
+            'R3': high + 2 * (pivot - low),
+            'S1': (2 * pivot) - high,
+            'S2': pivot - pp_range,
+            'S3': low - 2 * (high - pivot)
+        }
+    elif pivot_type == "FIBONACCI":
+        # Fibonacci pivot points
+        return {
+            'P': pivot,
+            'R1': pivot + pp_range * 0.382,
+            'R2': pivot + pp_range * 0.618,
+            'R3': pivot + pp_range * 1.000,
+            'S1': pivot - pp_range * 0.382,
+            'S2': pivot - pp_range * 0.618,
+            'S3': pivot - pp_range * 1.000
+        }
+    elif pivot_type == "WOODIE":
+        # Woodie pivot points
+        pivot = (high + low + 2 * close) / 4
+        return {
+            'P': pivot,
+            'R1': (2 * pivot) - low,
+            'R2': pivot + (high - low),
+            'R3': high + 2 * (pivot - low),
+            'S1': (2 * pivot) - high,
+            'S2': pivot - (high - low),
+            'S3': low - 2 * (high - pivot)
+        }
+    elif pivot_type == "CAMARILLA":
+        # Camarilla pivot points
+        return {
+            'P': pivot,
+            'R1': close + pp_range * 1.1 / 12,
+            'R2': close + pp_range * 1.1 / 6,
+            'R3': close + pp_range * 1.1 / 4,
+            'R4': close + pp_range * 1.1 / 2,
+            'S1': close - pp_range * 1.1 / 12,
+            'S2': close - pp_range * 1.1 / 6,
+            'S3': close - pp_range * 1.1 / 4,
+            'S4': close - pp_range * 1.1 / 2
+        }
+    elif pivot_type == "DEMARK":
+        # DeMark pivot points
+        x = high + 2 * low + close if close < open_price else 2 * high + low + close
+        x = x / 4 if close == open_price else x / 4
+        return {
+            'P': x,
+            'R1': x * 2 - low,
+            'S1': x * 2 - high
+        }
+    else:
+        return None
+
+def check_pivot_levels(current_price, pivot_levels, buffer_pips, symbol=SYMBOL):
+    """Check if price is near any pivot levels with enhanced detection"""
+    if pivot_levels is None:
+        return None
+        
+    buffer = buffer_pips * 0.0001  # Convert pips to price level for 4-digit pairs
+    closest_level = None
+    min_distance = float('inf')
+    
+    for level_name, level_price in pivot_levels.items():
+        distance = abs(current_price - level_price)
+        
+        # Check if within buffer zone
+        if distance <= buffer:
+            # Log pivot level interaction
+            msg = f"Price {current_price:.5f} near {level_name} at {level_price:.5f} (distance: {distance:.5f})"
+            print(msg)
+            write_diagnostic_log(symbol, msg)
+            
+            # Track closest level within buffer
+            if distance < min_distance:
+                min_distance = distance
+                closest_level = {
+                    'level': level_name,
+                    'price': level_price,
+                    'distance': current_price - level_price,
+                    'percent_distance': (distance / level_price) * 100,
+                    'is_support': 'S' in level_name,
+                    'is_resistance': 'R' in level_name
+                }
+    
+    # Additional check for price between pivot levels
+    if closest_level is None and len(pivot_levels) >= 2:
+        sorted_levels = sorted([(k, v) for k, v in pivot_levels.items()], key=lambda x: x[1])
+        for i in range(len(sorted_levels)-1):
+            lower = sorted_levels[i][1]
+            upper = sorted_levels[i+1][1]
+            if lower < current_price < upper:
+                msg = f"Price {current_price:.5f} between {sorted_levels[i][0]} ({lower:.5f}) and {sorted_levels[i+1][0]} ({upper:.5f})"
+                print(msg)
+                write_diagnostic_log(symbol, msg)
+                return {
+                    'between': True,
+                    'lower_level': sorted_levels[i][0],
+                    'lower_price': lower,
+                    'upper_level': sorted_levels[i+1][0],
+                    'upper_price': upper,
+                    'distance_to_lower': current_price - lower,
+                    'distance_to_upper': upper - current_price
+                }
+    
+    return closest_level
 
 def calculate_macd(df):
     """Calculate MACD indicator and histogram"""

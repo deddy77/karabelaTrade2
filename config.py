@@ -6,10 +6,26 @@
 SYMBOLS = ["EURUSD", "AUDUSD", "GBPUSD", "USDCHF"]  # Trade all major pairs
 TIMEFRAME = "M5"  # Primary timeframe for execution (M1, M5, M15, M30, H1, H4, D1)
 
-# Pattern Settings
+# Market Structure Settings
 USE_PRICE_ACTION = True  # Enable price action pattern confirmation
 MIN_PATTERN_BARS = 3    # Minimum bars needed to form a pattern
 SUPPORT_RESISTANCE_LOOKBACK = 20  # Bars to analyze for S/R levels
+USE_SWING_POINTS = True  # Enable swing high/low detection
+SWING_LEFT_BARS = 3     # Bars to left for swing point confirmation
+SWING_RIGHT_BARS = 3    # Bars to right for swing point confirmation
+MIN_SWING_DISTANCE_PIPS = 10  # Minimum distance between swing points
+USE_DYNAMIC_SR = True   # Enable dynamic support/resistance levels
+DYNAMIC_SR_LOOKBACK = 50 # Bars to analyze for dynamic S/R levels
+DYNAMIC_SR_MIN_TOUCHES = 2 # Minimum touches to confirm a level
+DYNAMIC_SR_BUFFER_PIPS = 3 # Buffer zone around dynamic levels
+
+# Pivot Points Settings
+USE_PIVOT_POINTS = True  # Enable pivot point analysis
+PIVOT_TYPE = "STANDARD"  # STANDARD or FIBONACCI
+PIVOT_TIMEFRAME = "D1"  # Calculate pivots on Daily timeframe
+PIVOT_BUFFER_PIPS = 2  # Buffer zone around pivot levels
+USE_PIVOT_SR_FILTER = True  # Use pivot points as trade filters
+PIVOT_REVERSAL_THRESHOLD = 0.5  # Minimum distance from pivot for reversal trades
 
 # RSI settings
 RSI_PERIOD = 7
