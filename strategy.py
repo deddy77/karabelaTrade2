@@ -29,6 +29,23 @@ def write_ama_diagnostics(symbol, timeframe, latest, prev):
     )
     write_diagnostic_log(symbol, msg, include_separator=True)
 
+def write_macd_diagnostics(symbol, tf, macd_line, signal_line, histogram, recent_hist):
+    """Write MACD diagnostics to log"""
+    msg = (
+        f"MACD Analysis on {tf}:\n"
+        f"MACD Line: {macd_line.iloc[-1]:.5f}\n"
+        f"Signal Line: {signal_line.iloc[-1]:.5f}\n"
+        f"Histogram: {histogram.iloc[-1]:.5f}\n"
+        f"Last {len(recent_hist)} histogram values:\n"
+    )
+    for i, val in enumerate(recent_hist):
+        msg += f"Bar {i+1}: {val:.5f}\n"
+    
+    msg += f"Growing bars detected: {all(recent_hist.iloc[i] > recent_hist.iloc[i-1] for i in range(1, len(recent_hist)))}\n"
+    msg += f"Zero line cross: {(histogram.iloc[-len(recent_hist)-1] < 0) != (histogram.iloc[-1] < 0)}\n"
+    
+    write_diagnostic_log(symbol, msg, include_separator=True)
+
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -41,13 +58,24 @@ from config import (SYMBOL, TIMEFRAME, MA_MEDIUM, MA_LONG,
                   USE_PRICE_ACTION, MIN_PATTERN_BARS, SUPPORT_RESISTANCE_LOOKBACK,
                   ANALYSIS_TIMEFRAMES, MTF_WEIGHTS, MTF_AGREEMENT_THRESHOLD, MTF_INDICATORS,
                   TRADING_SESSIONS, SESSION_PARAMS, MIN_AMA_GAP_PERCENT,
-                  USE_ADX_FILTER, ADX_PERIOD, ADX_THRESHOLD, ADX_EXTREME)
+                  USE_ADX_FILTER, ADX_PERIOD, ADX_THRESHOLD, ADX_EXTREME,
+                  USE_MACD_FILTER, MACD_FAST, MACD_SLOW, MACD_SIGNAL,
+                  MACD_CONSECUTIVE_BARS, MACD_GROWING_FACTOR, MACD_ZERO_CROSS_CONFIRM)
 from mt5_helper import (get_historical_data, open_buy_order, open_sell_order, close_all_positions, has_buy_position, has_sell_position)
 from risk_manager import determine_lot
 
 def calculate_ma(df, period):
     """Calculate Simple Moving Average"""
     return df['close'].rolling(window=period).mean()
+
+def calculate_roc(df, period=14):
+    """Calculate Rate of Change (ROC) indicator"""
+    try:
+        roc = ((df['close'] - df['close'].shift(period)) / df['close'].shift(period)) * 100
+        return roc
+    except Exception as e:
+        print(f"Error calculating ROC: {str(e)}")
+        return pd.Series([np.nan] * len(df), index=df.index)
 
 def calculate_rsi(df, period=14):
     """Calculate RSI using ta package"""
@@ -59,7 +87,7 @@ def calculate_rsi(df, period=14):
         return pd.Series([np.nan] * len(df), index=df.index)
 
 def calculate_adx(df, period=14):
-    """Calculate Average Directional Index (ADX) for trend strength"""
+    """Calculate Average Directional Index (ADX) and DMI for trend strength"""
     try:
         # Calculate +DI and -DI
         high_diff = df['high'].diff()
@@ -97,7 +125,8 @@ def calculate_adx(df, period=14):
         # Average Directional Index
         adx = dx.rolling(window=period).mean()
         
-        return adx
+        # Return ADX along with +DI and -DI for trend direction confirmation
+        return adx, pos_di, neg_di
     except Exception as e:
         print(f"Error calculating ADX: {str(e)}")
         return pd.Series([np.nan] * len(df), index=df.index)
@@ -415,6 +444,81 @@ def analyze_price_patterns(df, latest, tf):
             
     return buy_score, sell_score
 
+def calculate_macd(df):
+    """Calculate MACD indicator and histogram"""
+    from config import MACD_FAST, MACD_SLOW, MACD_SIGNAL
+    
+    # Calculate exponential moving averages
+    ema_fast = df['close'].ewm(span=MACD_FAST, adjust=False).mean()
+    ema_slow = df['close'].ewm(span=MACD_SLOW, adjust=False).mean()
+    
+    # Calculate MACD line
+    macd_line = ema_fast - ema_slow
+    
+    # Calculate Signal line
+    signal_line = macd_line.ewm(span=MACD_SIGNAL, adjust=False).mean()
+    
+    # Calculate Histogram
+    histogram = macd_line - signal_line
+    
+    return macd_line, signal_line, histogram
+
+def analyze_macd_momentum(df, latest, prev, tf, symbol=SYMBOL):
+    """Analyze MACD histogram for momentum confirmation"""
+    from config import MACD_CONSECUTIVE_BARS, MACD_GROWING_FACTOR, MACD_ZERO_CROSS_CONFIRM, USE_MACD_FILTER
+    
+    buy_score = 0
+    sell_score = 0
+    
+    if not USE_MACD_FILTER:
+        return buy_score, sell_score
+    
+    # Calculate MACD components
+    macd_line, signal_line, histogram = calculate_macd(df)
+    
+    if len(histogram) < MACD_CONSECUTIVE_BARS + 1:
+        return buy_score, sell_score
+    
+    # Get last few histogram values
+    recent_hist = histogram.tail(MACD_CONSECUTIVE_BARS + 1)
+    
+    # Log MACD diagnostics
+    write_macd_diagnostics(symbol, tf, macd_line, signal_line, histogram, recent_hist)
+    
+    # Check for consecutive growing positive histogram bars (bullish momentum)
+    if all(recent_hist.iloc[i] > 0 for i in range(-MACD_CONSECUTIVE_BARS, 0)):
+        growing = True
+        for i in range(-MACD_CONSECUTIVE_BARS, 0):
+            if recent_hist.iloc[i] < recent_hist.iloc[i-1] * MACD_GROWING_FACTOR:
+                growing = False
+                break
+        if growing:
+            buy_score += 1
+            print(f"🟢 Bullish momentum: {MACD_CONSECUTIVE_BARS} consecutive growing histogram bars on {tf}")
+            
+            # Additional point if just crossed zero line
+            if MACD_ZERO_CROSS_CONFIRM and histogram.iloc[-MACD_CONSECUTIVE_BARS-1] < 0:
+                buy_score += 0.5
+                print(f"🟢 Bullish zero-line crossover confirmed on {tf}")
+    
+    # Check for consecutive growing negative histogram bars (bearish momentum)
+    if all(recent_hist.iloc[i] < 0 for i in range(-MACD_CONSECUTIVE_BARS, 0)):
+        growing = True
+        for i in range(-MACD_CONSECUTIVE_BARS, 0):
+            if abs(recent_hist.iloc[i]) < abs(recent_hist.iloc[i-1]) * MACD_GROWING_FACTOR:
+                growing = False
+                break
+        if growing:
+            sell_score += 1
+            print(f"🔴 Bearish momentum: {MACD_CONSECUTIVE_BARS} consecutive growing histogram bars on {tf}")
+            
+            # Additional point if just crossed zero line
+            if MACD_ZERO_CROSS_CONFIRM and histogram.iloc[-MACD_CONSECUTIVE_BARS-1] > 0:
+                sell_score += 0.5
+                print(f"🔴 Bearish zero-line crossover confirmed on {tf}")
+    
+    return buy_score, sell_score
+
 def calculate_timeframe_signals(df, tf, weight):
     """Calculate signals for a specific timeframe"""
     if len(df) < 10:
@@ -431,10 +535,11 @@ def calculate_timeframe_signals(df, tf, weight):
     ma_buy, ma_sell = analyze_ma_crossover(latest, prev, tf)
     rsi_buy, rsi_sell = analyze_rsi(latest, prev, tf)
     pattern_buy, pattern_sell = analyze_price_patterns(df, latest, tf)
+    macd_buy, macd_sell = analyze_macd_momentum(df, latest, prev, tf, symbol)
     
     # Combine scores
-    buy_score = ma_buy + rsi_buy + pattern_buy
-    sell_score = ma_sell + rsi_sell + pattern_sell
+    buy_score = ma_buy + rsi_buy + pattern_buy + macd_buy
+    sell_score = ma_sell + rsi_sell + pattern_sell + macd_sell
     
     # Determine signal
     signal = 'NEUTRAL'
@@ -821,19 +926,55 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
     latest = df.iloc[-1]
     prev = df.iloc[-2]
     
-    # Calculate ADX for trend strength if enabled
+    # Calculate and display ADX and MACD values
     adx_value = None
     if USE_ADX_FILTER:
-        adx = calculate_adx(df, ADX_PERIOD)
+        adx, pos_di, neg_di = calculate_adx(df, ADX_PERIOD)
         if not adx.isna().iloc[-1]:
             adx_value = adx.iloc[-1]
-            print(f"ADX Value: {adx_value:.1f} (Threshold: {ADX_THRESHOLD})")
-            if adx_value >= ADX_EXTREME:
-                print(f"🔥 Extremely strong trend detected (ADX: {adx_value:.1f})")
-            elif adx_value >= ADX_THRESHOLD:
-                print(f"💪 Strong trend detected (ADX: {adx_value:.1f})")
+            pos_di_value = pos_di.iloc[-1]
+            neg_di_value = neg_di.iloc[-1]
+            
+            # Calculate ROC
+            roc = calculate_roc(df, period=14)
+            roc_value = roc.iloc[-1]
+            
+            print(f"\nMomentum Analysis:")
+            print(f"ROC(14): {roc_value:.2f}%")
+            if roc_value > 0:
+                print(f"🟢 Bullish momentum (Price rising at {roc_value:.2f}% rate)")
             else:
-                print(f"⚠️ Weak trend detected (ADX: {adx_value:.1f}) - may be ranging market")
+                print(f"🔴 Bearish momentum (Price falling at {abs(roc_value):.2f}% rate)")
+
+            print(f"\nADX/DMI Analysis:")
+            print(f"ADX: {adx_value:.1f} (Threshold: {ADX_THRESHOLD})")
+            print(f"+DI{ADX_PERIOD}: {pos_di_value:.1f}")
+            print(f"-DI{ADX_PERIOD}: {neg_di_value:.1f}")
+            
+            # DMI Trend Direction
+            if pos_di_value > neg_di_value:
+                print(f"🟢 Bullish trend (+DI > -DI by {(pos_di_value - neg_di_value):.1f})")
+            else:
+                print(f"🔴 Bearish trend (-DI > +DI by {(neg_di_value - pos_di_value):.1f})")
+            
+            # Trend Strength
+            if adx_value >= ADX_EXTREME:
+                print(f"🔥 Extremely strong trend (ADX: {adx_value:.1f})")
+            elif adx_value >= ADX_THRESHOLD:
+                print(f"💪 Strong trend (ADX: {adx_value:.1f})")
+            else:
+                print(f"⚠️ Weak trend (ADX: {adx_value:.1f}) - may be ranging market")
+
+    if USE_MACD_FILTER:
+        macd_line, signal_line, histogram = calculate_macd(df)
+        print(f"\nMACD Analysis:")
+        print(f"MACD Line: {macd_line.iloc[-1]:.5f}")
+        print(f"Signal Line: {signal_line.iloc[-1]:.5f}")
+        print(f"Histogram: {histogram.iloc[-1]:.5f}")
+        if histogram.iloc[-1] > 0:
+            print(f"🟢 Bullish momentum (Histogram: {histogram.iloc[-1]:.5f})")
+        else:
+            print(f"🔴 Bearish momentum (Histogram: {histogram.iloc[-1]:.5f})")
     
     # Log AMA values
     write_ama_diagnostics(symbol, "M5", latest, prev)
@@ -894,6 +1035,34 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
         
     # Process signals and execute trades if signal is not neutral
     if signal != 'NEUTRAL':
+        # Calculate MACD
+        macd_line, signal_line, histogram = calculate_macd(df)
+        recent_hist = histogram.tail(MACD_CONSECUTIVE_BARS + 1)
+        write_macd_diagnostics(symbol, TIMEFRAME, macd_line, signal_line, histogram, recent_hist)
+        
+        # Print MACD values
+        print(f"\nMACD Analysis:")
+        print(f"MACD Line: {macd_line.iloc[-1]:.5f}")
+        print(f"Signal Line: {signal_line.iloc[-1]:.5f}")
+        print(f"Histogram: {histogram.iloc[-1]:.5f}")
+        
+        # Check MACD filter
+        macd_filter_passed = True
+        if USE_MACD_FILTER:
+            macd_buy, macd_sell = analyze_macd_momentum(df, latest, prev, TIMEFRAME, symbol)
+            if signal == 'BUY':
+                if macd_buy > 0:
+                    print(f"🟢 Strong bullish momentum (MACD Histogram: {histogram.iloc[-1]:.5f})")
+                else:
+                    macd_filter_passed = False
+                    print(f"⚠️ MACD filter failed - No bullish momentum")
+            elif signal == 'SELL':
+                if macd_sell > 0:
+                    print(f"🔴 Strong bearish momentum (MACD Histogram: {histogram.iloc[-1]:.5f})")
+                else:
+                    macd_filter_passed = False
+                    print(f"⚠️ MACD filter failed - No bearish momentum")
+        
         # Check ADX filter if enabled
         adx_filter_passed = True
         if USE_ADX_FILTER and adx_value is not None:
@@ -909,7 +1078,27 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
                 if adx_value >= ADX_EXTREME:
                     print(f"🔥 Extremely strong trend (ADX: {adx_value:.1f}) - Consider increasing position size")
         
-        if adx_filter_passed:
+        # Check ROC filter for momentum confirmation
+        roc_filter_passed = True
+        if roc_value is not None:
+            if signal == 'BUY':
+                roc_filter_passed = roc_value > 0  # Positive ROC for bullish trend
+                if roc_filter_passed:
+                    print(f"✅ ROC filter passed: Positive momentum ({roc_value:.2f}%)")
+                else:
+                    print(f"⚠️ ROC filter failed: Negative momentum ({roc_value:.2f}%)")
+            else:  # SELL signal
+                roc_filter_passed = roc_value < 0  # Negative ROC for bearish trend
+                if roc_filter_passed:
+                    print(f"✅ ROC filter passed: Negative momentum ({roc_value:.2f}%)")
+                else:
+                    print(f"⚠️ ROC filter failed: Positive momentum ({roc_value:.2f}%)")
+            
+            write_diagnostic_log(symbol, f"ROC filter: {roc_filter_passed} ({roc_value:.2f}%)")
+
+        # Check all filters before proceeding
+        if adx_filter_passed and macd_filter_passed and roc_filter_passed:
+            write_diagnostic_log(symbol, "All filters (ADX, MACD, ROC) passed")
             is_buy = signal == 'BUY'
             
             # Check for existing positions that might conflict
