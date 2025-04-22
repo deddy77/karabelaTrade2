@@ -1783,6 +1783,27 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
     # Determine signal based on AMA crossover
     signal = 'NEUTRAL'
     
+    # Analyze volume patterns early
+    volume_analysis = analyze_volume_patterns(df)
+    vpa_confirms = False
+    if volume_analysis:
+        print("\nVolume Price Analysis (VPA):")
+        print(f"Volume trend: {'Increasing' if volume_analysis['volume_increasing'] else 'Decreasing'}")
+        print(f"Volume vs Average: {'Above' if volume_analysis['volume_above_avg'] else 'Below'}")
+        print(f"Volume ratio: {volume_analysis['volume_ratio']:.2f}x average")
+        print(f"Price spread: {'Wide' if volume_analysis['wide_spread'] else 'Normal'}")
+        
+        # VPA validation
+        vpa_confirms = (
+            volume_analysis['volume_increasing'] and 
+            volume_analysis['volume_above_avg'] and
+            volume_analysis['volume_ratio'] > 1.2
+        )
+        if vpa_confirms:
+            print("✅ Volume analysis confirms the signal")
+        else:
+            print("⚠️ Volume analysis does not confirm the signal")
+    
     # Calculate the gap between AMA50 and AMA200 as a percentage
     ama_gap_percent = abs(latest['ma_medium'] - latest['ma_long']) / latest['ma_long'] * 100
     min_gap_percent = MIN_AMA_GAP_PERCENT  # Minimum gap between AMAs from config
@@ -1795,13 +1816,29 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
         price_confirms_trend = latest['close'] > latest['ma_medium']
         
         if sufficient_gap and price_confirms_trend:
-            signal = 'BUY'
-            print("🟢 Bullish Setup: AMA50 > AMA200")
-            print(f"🟢 AMA Gap: {ama_gap_percent:.2f}% (minimum: {min_gap_percent:.2f}%)")
-            print(f"🟢 Price confirmation: Price ({latest['close']:.5f}) > AMA50 ({latest['ma_medium']:.5f})")
-            
-            if prev['ma_medium'] <= prev['ma_long']:
-                print("🟢 Fresh Golden Cross Detected!")
+            # Check supporting filters (need 2/3 to confirm)
+            filter_count = 0
+            if macd_filter_passed and roc_filter_passed:
+                filter_count += 1
+                print("✅ Momentum Filter Confirmed (ROC + MACD)")
+            if adx_filter_passed:
+                filter_count += 1
+                print("✅ Trend Strength Filter Confirmed (ADX > 20)")
+            if volume_analysis and bb_filter_passed and volume_analysis['volume_ratio'] > 1.2:  # Using earlier volume analysis
+                filter_count += 1
+                print("✅ Volume/Volatility Filter Confirmed (Volume > 1.2x + BB expansion)")
+                
+            if filter_count >= 2:
+                signal = 'BUY'
+                print("🟢 Bullish Setup: AMA50 > AMA200")
+                print(f"🟢 AMA Gap: {ama_gap_percent:.2f}% (minimum: {min_gap_percent:.2f}%)")
+                print(f"🟢 Price confirmation: Price ({latest['close']:.5f}) > AMA50 ({latest['ma_medium']:.5f})")
+                print(f"🟢 {filter_count}/3 Supporting Filters Confirmed")
+                
+                if prev['ma_medium'] <= prev['ma_long']:
+                    print("🟢 Fresh Golden Cross Detected!")
+            else:
+                print(f"⚠️ Only {filter_count}/3 Supporting Filters Confirmed - Signal Not Valid")
         else:
             if not sufficient_gap:
                 print(f"⚠️ Insufficient gap between AMAs: {ama_gap_percent:.2f}% (minimum: {min_gap_percent:.2f}%)")
@@ -1813,13 +1850,29 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
         price_confirms_trend = latest['close'] < latest['ma_medium']
         
         if sufficient_gap and price_confirms_trend:
-            signal = 'SELL'
-            print("🔴 Bearish Setup: AMA50 < AMA200")
-            print(f"🔴 AMA Gap: {ama_gap_percent:.2f}% (minimum: {min_gap_percent:.2f}%)")
-            print(f"🔴 Price confirmation: Price ({latest['close']:.5f}) < AMA50 ({latest['ma_medium']:.5f})")
-            
-            if prev['ma_medium'] >= prev['ma_long']:
-                print("🔴 Fresh Death Cross Detected!")
+            # Check supporting filters (need 2/3 to confirm)
+            filter_count = 0
+            if macd_filter_passed and roc_filter_passed:
+                filter_count += 1
+                print("✅ Momentum Filter Confirmed (ROC + MACD)")
+            if adx_filter_passed:
+                filter_count += 1
+                print("✅ Trend Strength Filter Confirmed (ADX > 20)")
+            if volume_analysis and bb_filter_passed and volume_analysis['volume_ratio'] > 1.2:  # Using volume analysis defined earlier
+                filter_count += 1
+                print("✅ Volume/Volatility Filter Confirmed (Volume > 1.2x + BB expansion)")
+                
+            if filter_count >= 2:
+                signal = 'SELL'
+                print("🔴 Bearish Setup: AMA50 < AMA200")
+                print(f"🔴 AMA Gap: {ama_gap_percent:.2f}% (minimum: {min_gap_percent:.2f}%)")
+                print(f"🔴 Price confirmation: Price ({latest['close']:.5f}) < AMA50 ({latest['ma_medium']:.5f})")
+                print(f"🔴 {filter_count}/3 Supporting Filters Confirmed")
+                
+                if prev['ma_medium'] >= prev['ma_long']:
+                    print("🔴 Fresh Death Cross Detected!")
+            else:
+                print(f"⚠️ Only {filter_count}/3 Supporting Filters Confirmed - Signal Not Valid")
         else:
             if not sufficient_gap:
                 print(f"⚠️ Insufficient gap between AMAs: {ama_gap_percent:.2f}% (minimum: {min_gap_percent:.2f}%)")
@@ -1848,29 +1901,7 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
     if not check_cooldown(symbol, current_time):
         return
         
-    # Process signals and execute trades if signal is not neutral
-    if signal != 'NEUTRAL':
-        # Analyze volume patterns
-        volume_analysis = analyze_volume_patterns(df)
-        if volume_analysis:
-            print("\nVolume Price Analysis (VPA):")
-            print(f"Volume trend: {'Increasing' if volume_analysis['volume_increasing'] else 'Decreasing'}")
-            print(f"Volume vs Average: {'Above' if volume_analysis['volume_above_avg'] else 'Below'}")
-            print(f"Volume ratio: {volume_analysis['volume_ratio']:.2f}x average")
-            print(f"Price spread: {'Wide' if volume_analysis['wide_spread'] else 'Normal'}")
-            
-            # VPA validation
-            vpa_confirms = (
-                volume_analysis['volume_increasing'] and 
-                volume_analysis['volume_above_avg'] and
-                volume_analysis['volume_ratio'] > 1.2
-            )
-            if vpa_confirms:
-                print("✅ Volume analysis confirms the signal")
-            else:
-                print("⚠️ Volume analysis does not confirm the signal")
-        
-        # Calculate MACD
+    # Calculate MACD
         macd_line, signal_line, histogram = calculate_macd(df)
         recent_hist = histogram.tail(MACD_CONSECUTIVE_BARS + 1)
         write_macd_diagnostics(symbol, TIMEFRAME, macd_line, signal_line, histogram, recent_hist)
@@ -1906,22 +1937,19 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
     print(f"Signal Line: {signal_line.iloc[-1]:.5f}")
     print(f"Histogram: {histogram.iloc[-1]:.5f}")
     
-    # Check MACD filter
-    macd_filter_passed = True
+    # Print MACD momentum status without blocking the trade
     if USE_MACD_FILTER:
         macd_buy, macd_sell = analyze_macd_momentum(df, latest, prev, TIMEFRAME, symbol)
         if signal == 'BUY':
             if macd_buy > 0:
                 print(f"🟢 Strong bullish momentum (MACD Histogram: {histogram.iloc[-1]:.5f})")
             else:
-                macd_filter_passed = False
-                print(f"⚠️ MACD filter failed - No bullish momentum")
+                print(f"ℹ️ No additional MACD momentum confirmation")
         elif signal == 'SELL':
             if macd_sell > 0:
                 print(f"🔴 Strong bearish momentum (MACD Histogram: {histogram.iloc[-1]:.5f})")
             else:
-                macd_filter_passed = False
-                print(f"⚠️ MACD filter failed - No bearish momentum")
+                print(f"ℹ️ No additional MACD momentum confirmation")
     
     roc_filter_passed = True
     if roc_value is not None:
@@ -2026,10 +2054,8 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
         else:
             print(f"✅ ATR filter passed: Normal volatility ({atr_ratio:.2f}x)")
             
-    # Check all filters before proceeding
-        if (adx_filter_passed and macd_filter_passed and roc_filter_passed and 
-            bb_filter_passed and atr_filter_passed and obv_confirms_trend and
-            (volume_analysis is None or vpa_confirms)):  # Include VPA check
+    # Proceed with trade if signal is valid
+        if signal in ['BUY', 'SELL']:  # Signal was already validated with 2/3 filters
             write_diagnostic_log(symbol, "All filters (ADX, MACD, ROC, BB) passed")
             is_buy = signal == 'BUY'
             
