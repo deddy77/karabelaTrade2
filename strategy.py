@@ -66,9 +66,30 @@ from config import (SYMBOL, TIMEFRAME, MA_MEDIUM, MA_LONG, ATR_PERIOD, MAX_ATR_M
 from mt5_helper import (get_historical_data, open_buy_order, open_sell_order, close_all_positions, has_buy_position, has_sell_position)
 from risk_manager import determine_lot
 
-def calculate_ma(df, period):
-    """Calculate Simple Moving Average"""
+def calculate_ma(df, period, use_vwma=False):
+    """Calculate Simple Moving Average or Volume-Weighted Moving Average"""
+    if use_vwma:
+        volume = df['tick_volume'] if 'tick_volume' in df.columns else None
+        if volume is not None:
+            # Calculate VWMA using tick volume
+            return (df['close'] * volume).rolling(window=period).sum() / volume.rolling(window=period).sum()
+    # Calculate regular SMA if no volume data or VWMA not requested
     return df['close'].rolling(window=period).mean()
+
+def calculate_vwma(df, period):
+    """Calculate Volume-Weighted Moving Average using tick volume"""
+    try:
+        # Use 'tick_volume' from MT5 data instead of 'volume'
+        volume = df['tick_volume'] if 'tick_volume' in df.columns else None
+        
+        if volume is None:
+            print("No volume data available, skipping VWMA calculation")
+            return pd.Series([np.nan] * len(df), index=df.index)
+            
+        return (df['close'] * volume).rolling(window=period).sum() / volume.rolling(window=period).sum()
+    except Exception as e:
+        print(f"Error calculating VWMA: {str(e)}")
+        return pd.Series([np.nan] * len(df), index=df.index)
 
 def calculate_atr(df, period=14):
     """Calculate Average True Range"""
@@ -140,6 +161,68 @@ def calculate_rsi(df, period=14):
         print(f"Error calculating RSI: {str(e)}")
         return pd.Series([np.nan] * len(df), index=df.index)
 
+def analyze_volume_patterns(df):
+    """Analyze volume patterns for price action confirmation using tick volume"""
+    try:
+        # Use tick_volume from MT5 data
+        volume = df['tick_volume'] if 'tick_volume' in df.columns else None
+        
+        if volume is None:
+            print("No volume data available for analysis")
+            return None
+            
+        close = df['close']
+        high = df['high']
+        low = df['low']
+        
+        # Get recent data
+        recent_volume = volume.tail(5)
+        avg_volume = volume.rolling(window=20).mean().iloc[-1]
+        
+        # Volume analysis
+        volume_increasing = recent_volume.is_monotonic_increasing
+        volume_above_avg = recent_volume.iloc[-1] > avg_volume
+        price_spread = high.iloc[-1] - low.iloc[-1]
+        avg_spread = (high - low).rolling(window=20).mean().iloc[-1]
+        wide_spread = price_spread > avg_spread * 1.2
+        
+        return {
+            'volume_increasing': volume_increasing,
+            'volume_above_avg': volume_above_avg,
+            'wide_spread': wide_spread,
+            'current_volume': recent_volume.iloc[-1],
+            'avg_volume': avg_volume,
+            'volume_ratio': recent_volume.iloc[-1] / avg_volume if avg_volume > 0 else 0
+        }
+    except Exception as e:
+        print(f"Error analyzing volume patterns: {str(e)}")
+        return None
+
+def calculate_obv(df):
+    """Calculate On-Balance Volume (OBV) indicator using tick volume"""
+    try:
+        obv = pd.Series(0.0, index=df.index)
+        
+        # Get volume data
+        volume = df['tick_volume'] if 'tick_volume' in df.columns else None
+        if volume is None:
+            print("No volume data available for OBV calculation")
+            return obv
+        
+        # Calculate OBV
+        for i in range(1, len(df)):
+            if df['close'].iloc[i] > df['close'].iloc[i-1]:
+                obv.iloc[i] = obv.iloc[i-1] + volume.iloc[i]
+            elif df['close'].iloc[i] < df['close'].iloc[i-1]:
+                obv.iloc[i] = obv.iloc[i-1] - volume.iloc[i]
+            else:
+                obv.iloc[i] = obv.iloc[i-1]
+        
+        return obv
+    except Exception as e:
+        print(f"Error calculating OBV: {str(e)}")
+        return pd.Series([np.nan] * len(df), index=df.index)
+
 def calculate_adx(df, period=14):
     """Calculate Average Directional Index (ADX) and DMI for trend strength"""
     try:
@@ -183,7 +266,7 @@ def calculate_adx(df, period=14):
         return adx, pos_di, neg_di
     except Exception as e:
         print(f"Error calculating ADX: {str(e)}")
-        return pd.Series([np.nan] * len(df), index=df.index)
+        return pd.Series([np.nan] * len(df), index=df.index), pd.Series([np.nan] * len(df), index=df.index), pd.Series([np.nan] * len(df), index=df.index)
 
 def detect_dynamic_sr_levels(df, lookback=50, min_touches=2, buffer_pips=3):
     """Identify dynamic support/resistance levels based on recent price action"""
@@ -1249,6 +1332,11 @@ def prepare_market_data(symbol):
     # Calculate indicators
     df['ma_medium'] = calculate_ama(df, MA_MEDIUM)  # AMA50
     df['ma_long'] = calculate_ama(df, MA_LONG)      # AMA200
+    
+    # Add VWMA for additional confirmation
+    df['vwma_medium'] = calculate_vwma(df, MA_MEDIUM)  # VWMA50
+    df['vwma_long'] = calculate_vwma(df, MA_LONG)      # VWMA200
+    
     if USE_RSI_FILTER:
         df['rsi'] = calculate_rsi(df, RSI_PERIOD)
     df = df.dropna()
@@ -1295,10 +1383,20 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
     prev = df.iloc[-2]
     
     # Calculate and display ADX and MACD values
+    # Initialize filter flags
     adx_value = None
+    adx_filter_passed = False
+    macd_filter_passed = True  # Default to True since it's optional
+    roc_filter_passed = True   # Default to True
+    bb_filter_passed = True    # Default to True
+    atr_filter_passed = False
+    obv_confirms_trend = False
+
     if USE_ADX_FILTER:
         adx, pos_di, neg_di = calculate_adx(df, ADX_PERIOD)
         if not adx.isna().iloc[-1]:
+            adx_value = adx.iloc[-1]
+            adx_filter_passed = adx_value >= ADX_THRESHOLD
             adx_value = adx.iloc[-1]
             pos_di_value = pos_di.iloc[-1]
             neg_di_value = neg_di.iloc[-1]
@@ -1393,8 +1491,22 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
             if not price_confirms_trend:
                 print(f"⚠️ Price ({latest['close']:.5f}) above AMA50 ({latest['ma_medium']:.5f}) - trend not confirmed")
     
+    # Check VWMA alignment with AMA
+    vwma_confirms = False
+    if 'vwma_medium' in df.columns and 'vwma_long' in df.columns:
+        vwma_aligned = (
+            (signal == 'BUY' and df['vwma_medium'].iloc[-1] > df['vwma_long'].iloc[-1]) or
+            (signal == 'SELL' and df['vwma_medium'].iloc[-1] < df['vwma_long'].iloc[-1])
+        )
+        if vwma_aligned:
+            print("✅ VWMA confirms trend direction")
+            vwma_confirms = True
+        else:
+            print("⚠️ VWMA does not confirm trend direction")
+            
     write_diagnostic_log(symbol, f"M5 AMA Signal: {signal}")
     write_diagnostic_log(symbol, f"AMA Gap: {ama_gap_percent:.2f}%, Price confirms trend: {price_confirms_trend if 'price_confirms_trend' in locals() else 'N/A'}")
+    write_diagnostic_log(symbol, f"VWMA confirmation: {vwma_confirms}")
     
     # Check trading conditions
     current_time = datetime.now()
@@ -1403,64 +1515,93 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
         
     # Process signals and execute trades if signal is not neutral
     if signal != 'NEUTRAL':
+        # Analyze volume patterns
+        volume_analysis = analyze_volume_patterns(df)
+        if volume_analysis:
+            print("\nVolume Price Analysis (VPA):")
+            print(f"Volume trend: {'Increasing' if volume_analysis['volume_increasing'] else 'Decreasing'}")
+            print(f"Volume vs Average: {'Above' if volume_analysis['volume_above_avg'] else 'Below'}")
+            print(f"Volume ratio: {volume_analysis['volume_ratio']:.2f}x average")
+            print(f"Price spread: {'Wide' if volume_analysis['wide_spread'] else 'Normal'}")
+            
+            # VPA validation
+            vpa_confirms = (
+                volume_analysis['volume_increasing'] and 
+                volume_analysis['volume_above_avg'] and
+                volume_analysis['volume_ratio'] > 1.2
+            )
+            if vpa_confirms:
+                print("✅ Volume analysis confirms the signal")
+            else:
+                print("⚠️ Volume analysis does not confirm the signal")
+        
         # Calculate MACD
         macd_line, signal_line, histogram = calculate_macd(df)
         recent_hist = histogram.tail(MACD_CONSECUTIVE_BARS + 1)
         write_macd_diagnostics(symbol, TIMEFRAME, macd_line, signal_line, histogram, recent_hist)
         
-        # Print MACD values
-        print(f"\nMACD Analysis:")
-        print(f"MACD Line: {macd_line.iloc[-1]:.5f}")
-        print(f"Signal Line: {signal_line.iloc[-1]:.5f}")
-        print(f"Histogram: {histogram.iloc[-1]:.5f}")
-        
-        # Check MACD filter
-        macd_filter_passed = True
-        if USE_MACD_FILTER:
-            macd_buy, macd_sell = analyze_macd_momentum(df, latest, prev, TIMEFRAME, symbol)
-            if signal == 'BUY':
-                if macd_buy > 0:
-                    print(f"🟢 Strong bullish momentum (MACD Histogram: {histogram.iloc[-1]:.5f})")
-                else:
-                    macd_filter_passed = False
-                    print(f"⚠️ MACD filter failed - No bullish momentum")
-            elif signal == 'SELL':
-                if macd_sell > 0:
-                    print(f"🔴 Strong bearish momentum (MACD Histogram: {histogram.iloc[-1]:.5f})")
-                else:
-                    macd_filter_passed = False
-                    print(f"⚠️ MACD filter failed - No bearish momentum")
-        
-        # Check ADX filter if enabled
-        adx_filter_passed = True
-        if USE_ADX_FILTER and adx_value is not None:
-            adx_filter_passed = adx_value >= ADX_THRESHOLD
-            if not adx_filter_passed:
-                print(f"⚠️ ADX filter failed: {adx_value:.1f} < {ADX_THRESHOLD} - Not enough trend strength")
-                write_diagnostic_log(symbol, f"ADX filter failed: {adx_value:.1f} < {ADX_THRESHOLD}")
+    # Calculate OBV
+    obv = calculate_obv(df)
+    obv_sma = obv.rolling(window=20).mean()  # 20-period SMA of OBV
+    
+    print(f"\nOBV Analysis:")
+    print(f"Current OBV: {obv.iloc[-1]:.0f}")
+    print(f"OBV SMA(20): {obv_sma.iloc[-1]:.0f}")
+    
+    # Check if OBV confirms price movement
+    obv_confirms_trend = False
+    if signal == 'BUY':
+        if obv.iloc[-1] > obv_sma.iloc[-1]:
+            print("🟢 OBV above its SMA - Volume confirms uptrend")
+            obv_confirms_trend = True
+        else:
+            print("⚠️ OBV below its SMA - Volume not confirming uptrend")
+    elif signal == 'SELL':
+        if obv.iloc[-1] < obv_sma.iloc[-1]:
+            print("🔴 OBV below its SMA - Volume confirms downtrend")
+            obv_confirms_trend = True
+        else:
+            print("⚠️ OBV above its SMA - Volume not confirming downtrend")
+    
+    write_diagnostic_log(symbol, f"OBV trend confirmation: {obv_confirms_trend}")
+    
+    # Print MACD values
+    print(f"\nMACD Analysis:")
+    print(f"MACD Line: {macd_line.iloc[-1]:.5f}")
+    print(f"Signal Line: {signal_line.iloc[-1]:.5f}")
+    print(f"Histogram: {histogram.iloc[-1]:.5f}")
+    
+    # Check MACD filter
+    macd_filter_passed = True
+    if USE_MACD_FILTER:
+        macd_buy, macd_sell = analyze_macd_momentum(df, latest, prev, TIMEFRAME, symbol)
+        if signal == 'BUY':
+            if macd_buy > 0:
+                print(f"🟢 Strong bullish momentum (MACD Histogram: {histogram.iloc[-1]:.5f})")
             else:
-                print(f"✅ ADX filter passed: {adx_value:.1f} >= {ADX_THRESHOLD} - Strong trend confirmed")
-                write_diagnostic_log(symbol, f"ADX filter passed: {adx_value:.1f} >= {ADX_THRESHOLD}")
-                
-                # Increase risk for extremely strong trends
-                if adx_value >= ADX_EXTREME:
-                    print(f"🔥 Extremely strong trend (ADX: {adx_value:.1f}) - Consider increasing position size")
-        
-        # Check ROC filter for momentum confirmation
-        roc_filter_passed = True
-        if roc_value is not None:
-            if signal == 'BUY':
-                roc_filter_passed = roc_value > 0  # Positive ROC for bullish trend
-                if roc_filter_passed:
-                    print(f"✅ ROC filter passed: Positive momentum ({roc_value:.2f}%)")
-                else:
-                    print(f"⚠️ ROC filter failed: Negative momentum ({roc_value:.2f}%)")
-            else:  # SELL signal
-                roc_filter_passed = roc_value < 0  # Negative ROC for bearish trend
-                if roc_filter_passed:
-                    print(f"✅ ROC filter passed: Negative momentum ({roc_value:.2f}%)")
-                else:
-                    print(f"⚠️ ROC filter failed: Positive momentum ({roc_value:.2f}%)")
+                macd_filter_passed = False
+                print(f"⚠️ MACD filter failed - No bullish momentum")
+        elif signal == 'SELL':
+            if macd_sell > 0:
+                print(f"🔴 Strong bearish momentum (MACD Histogram: {histogram.iloc[-1]:.5f})")
+            else:
+                macd_filter_passed = False
+                print(f"⚠️ MACD filter failed - No bearish momentum")
+    
+    roc_filter_passed = True
+    if roc_value is not None:
+        if signal == 'BUY':
+            roc_filter_passed = roc_value > 0  # Positive ROC for bullish trend
+            if roc_filter_passed:
+                print(f"✅ ROC filter passed: Positive momentum ({roc_value:.2f}%)")
+            else:
+                print(f"⚠️ ROC filter failed: Negative momentum ({roc_value:.2f}%)")
+        else:  # SELL signal
+            roc_filter_passed = roc_value < 0  # Negative ROC for bearish trend
+            if roc_filter_passed:
+                print(f"✅ ROC filter passed: Negative momentum ({roc_value:.2f}%)")
+            else:
+                print(f"⚠️ ROC filter failed: Positive momentum ({roc_value:.2f}%)")
             
             write_diagnostic_log(symbol, f"ROC filter: {roc_filter_passed} ({roc_value:.2f}%)")
 
@@ -1550,8 +1691,10 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
         else:
             print(f"✅ ATR filter passed: Normal volatility ({atr_ratio:.2f}x)")
             
-        # Check all filters before proceeding
-        if adx_filter_passed and macd_filter_passed and roc_filter_passed and bb_filter_passed and atr_filter_passed:
+    # Check all filters before proceeding
+        if (adx_filter_passed and macd_filter_passed and roc_filter_passed and 
+            bb_filter_passed and atr_filter_passed and obv_confirms_trend and
+            (volume_analysis is None or vpa_confirms)):  # Include VPA check
             write_diagnostic_log(symbol, "All filters (ADX, MACD, ROC, BB) passed")
             is_buy = signal == 'BUY'
             
@@ -1565,8 +1708,37 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
                 print(f"No historical data available for {symbol}")
                 return
                 
-            # Calculate and execute trade
-            lot_size, sl_pips, tp_pips = calculate_trade_parameters(symbol, is_buy, risk_df)
+            # Calculate base trade parameters
+            base_lot_size, sl_pips, tp_pips = calculate_trade_parameters(symbol, is_buy, risk_df)
+            
+            # Adjust position size based on volume confirmation and VWMA alignment
+            volume_multiplier = 1.0
+            
+            # Volume analysis adjustment
+            if volume_analysis and vpa_confirms:
+                if volume_analysis['volume_ratio'] > 2.0:
+                    volume_multiplier *= 1.2  # +20% for strong volume
+                    print(f"📈 +20% position size: Strong volume confirmation")
+                    print(f"Volume ratio: {volume_analysis['volume_ratio']:.2f}x average")
+            else:
+                volume_multiplier *= 0.8  # -20% for weak volume
+                print(f"📉 -20% position size: Weak volume confirmation")
+            
+            # VWMA alignment adjustment
+            if vwma_confirms:
+                volume_multiplier *= 1.1  # +10% for VWMA confirmation
+                print(f"📈 +10% position size: VWMA confirms trend")
+            else:
+                volume_multiplier *= 0.9  # -10% for VWMA divergence
+                print(f"📉 -10% position size: VWMA divergence")
+            
+            final_lot_size = base_lot_size * volume_multiplier
+            
             if market_open:
+                print(f"\nPosition Sizing:")
+                print(f"Base lot size: {base_lot_size:.2f}")
+                print(f"Volume multiplier: {volume_multiplier:.2f}")
+                print(f"Final lot size: {final_lot_size:.2f}")
+                
                 last_trade_times[symbol] = current_time
-                execute_trade(symbol, is_buy, lot_size, sl_pips, tp_pips)
+                execute_trade(symbol, is_buy, final_lot_size, sl_pips, tp_pips)
