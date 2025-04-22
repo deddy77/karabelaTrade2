@@ -8,7 +8,7 @@ SYMBOLS = ["EURUSD", "AUDUSD", "GBPUSD", "USDCHF"]  # Trade all major pairs
 TIMEFRAME = "M5"  # Primary timeframe for execution (M1, M5, M15, M30, H1, H4, D1)
 
 # Pattern Settings
-USE_PRICE_ACTION = True  # Enable price action pattern confirmation
+USE_PRICE_ACTION = False  # Enable price action pattern confirmation
 MIN_PATTERN_BARS = 3    # Minimum bars needed to form a pattern
 SUPPORT_RESISTANCE_LOOKBACK = 20  # Bars to analyze for S/R levels
 
@@ -16,7 +16,11 @@ SUPPORT_RESISTANCE_LOOKBACK = 20  # Bars to analyze for S/R levels
 RSI_PERIOD = 7
 RSI_OVERBOUGHT = 70
 RSI_OVERSOLD = 20
+<<<<<<< HEAD
 USE_RSI_FILTER = True  # Enable RSI confirmation for backtesting
+=======
+USE_RSI_FILTER = False  # Enable/disable RSI confirmation
+>>>>>>> 26eacf4c7406648bbc0d47c6d0f84fa8f6fd8ab2
 
 # Multi-Timeframe Analysis Settings
 ANALYSIS_TIMEFRAMES = ["M15", "H1", "H4"]  # Multi-timeframe analysis for backtesting
@@ -39,10 +43,17 @@ DEFAULT_TP_MULTIPLIER = 3.0  # Take profit as multiple of stop loss (fallback)
 DEFAULT_TP_PIPS = 3  # Fixed take profit in pips (override multiplier if set)
 
 # Exit Strategy Settings
+<<<<<<< HEAD
 USE_TRAILING_STOP = False  # Enable trailing stop loss for backtesting
 TRAILING_STOP_ACTIVATION_PIPS = 15  # Activate trailing stop when profit reaches this many pips
 TRAILING_STOP_DISTANCE_PIPS = 10  # Distance to maintain for trailing stop
 USE_DYNAMIC_TP = False # Enable dynamic take profit based on market conditions
+=======
+USE_TRAILING_STOP = False  # Enable trailing stop loss
+TRAILING_STOP_ACTIVATION_PIPS = 15  # Activate trailing stop when profit reaches this many pips
+TRAILING_STOP_DISTANCE_PIPS = 10  # Distance to maintain for trailing stop
+USE_DYNAMIC_TP = False  # Enable dynamic take profit based on market conditions
+>>>>>>> 26eacf4c7406648bbc0d47c6d0f84fa8f6fd8ab2
 DYNAMIC_TP_ATR_MULTIPLIER = 3.0  # Multiplier for ATR to set dynamic take profit
 CHECK_EXIT_INTERVAL = 60  # Check and update exit levels every 60 seconds
 
@@ -82,12 +93,20 @@ SESSION_PARAMS = {
     },
     "London": {
         "risk_multiplier": 1.0,
+<<<<<<< HEAD
         "use_rsi_filter": True,
+=======
+        "use_rsi_filter": False,
+>>>>>>> 26eacf4c7406648bbc0d47c6d0f84fa8f6fd8ab2
         "max_spread": 15
     },
     "NewYork": {
         "risk_multiplier": 1.2,  # Higher risk during NY session
+<<<<<<< HEAD
         "use_rsi_filter": True,
+=======
+        "use_rsi_filter": False,
+>>>>>>> 26eacf4c7406648bbc0d47c6d0f84fa8f6fd8ab2
         "max_spread": 15
     }
 }

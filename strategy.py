@@ -663,7 +663,7 @@ from typing import Dict
 
 # Global dictionary to track last trade time per symbol
 last_trade_times: Dict[str, datetime] = {}
-TRADE_COOLDOWN_MINUTES = 5  # Wait at least 5 minutes between trades
+TRADE_COOLDOWN_MINUTES = 1  # Wait at least 1 minutes between trades
 
 
 def initialize_signals():

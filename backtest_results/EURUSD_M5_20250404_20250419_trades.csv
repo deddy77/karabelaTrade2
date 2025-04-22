@@ -1,0 +1,2 @@
+symbol,direction,entry_time,entry_price,exit_time,exit_price,exit_reason,lot_size,sl_price,tp_price,profit_pips,profit_money,max_profit_pips,max_drawdown_pips,trade_duration
+EURUSD,BUY,2025-04-11 06:45:00,1.13459,2025-04-11 07:00:00,1.13859,TP,0.1,1.13259,1.13859,40.000000000000036,40.000000000000036,28.900000000000592,0,0 days 00:15:00
