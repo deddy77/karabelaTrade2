@@ -52,7 +52,8 @@ from datetime import datetime, timedelta
 from ta.momentum import RSIIndicator
 from ta import add_all_ta_features
 import forex_factory_scrap
-from config import (SYMBOL, TIMEFRAME, MA_MEDIUM, MA_LONG, 
+from config import (SYMBOL, TIMEFRAME, MA_MEDIUM, MA_LONG, ATR_PERIOD, MAX_ATR_MULT, MIN_ATR_MULT,
+                  KC_PERIOD, KC_ATR_MULT, KC_USE_EMA,
                   USE_ADAPTIVE_MA, AMA_FAST_EMA, AMA_SLOW_EMA, SYMBOL_SETTINGS,
                   DEFAULT_TP_PIPS, RSI_PERIOD, RSI_OVERBOUGHT, RSI_OVERSOLD, USE_RSI_FILTER,
                   USE_PRICE_ACTION, MIN_PATTERN_BARS, SUPPORT_RESISTANCE_LOOKBACK,
@@ -60,13 +61,66 @@ from config import (SYMBOL, TIMEFRAME, MA_MEDIUM, MA_LONG,
                   TRADING_SESSIONS, SESSION_PARAMS, MIN_AMA_GAP_PERCENT,
                   USE_ADX_FILTER, ADX_PERIOD, ADX_THRESHOLD, ADX_EXTREME,
                   USE_MACD_FILTER, MACD_FAST, MACD_SLOW, MACD_SIGNAL,
-                  MACD_CONSECUTIVE_BARS, MACD_GROWING_FACTOR, MACD_ZERO_CROSS_CONFIRM)
+                  MACD_CONSECUTIVE_BARS, MACD_GROWING_FACTOR, MACD_ZERO_CROSS_CONFIRM,
+                  USE_BB_FILTER, BB_PERIOD, BB_STD_DEV, BB_EXTENSION_THRESHOLD, MIN_BB_BANDWIDTH)
 from mt5_helper import (get_historical_data, open_buy_order, open_sell_order, close_all_positions, has_buy_position, has_sell_position)
 from risk_manager import determine_lot
 
 def calculate_ma(df, period):
     """Calculate Simple Moving Average"""
     return df['close'].rolling(window=period).mean()
+
+def calculate_atr(df, period=14):
+    """Calculate Average True Range"""
+    try:
+        high_low = df['high'] - df['low']
+        high_close = abs(df['high'] - df['close'].shift())
+        low_close = abs(df['low'] - df['close'].shift())
+        
+        ranges = pd.concat([high_low, high_close, low_close], axis=1)
+        true_range = ranges.max(axis=1)
+        atr = true_range.rolling(window=period).mean()
+        return atr
+    except Exception as e:
+        print(f"Error calculating ATR: {str(e)}")
+        return pd.Series([np.nan] * len(df), index=df.index)
+
+def calculate_keltner_channels(df, period=20, atr_mult=2.0, use_ema=True):
+    """Calculate Keltner Channels"""
+    try:
+        # Calculate middle line (EMA or SMA)
+        if use_ema:
+            middle_line = df['close'].ewm(span=period, adjust=False).mean()
+        else:
+            middle_line = df['close'].rolling(window=period).mean()
+        
+        # Calculate ATR for channel width
+        atr = calculate_atr(df, period)
+        
+        # Calculate upper and lower channels
+        upper_channel = middle_line + (atr * atr_mult)
+        lower_channel = middle_line - (atr * atr_mult)
+        
+        # Calculate channel width as percentage of middle line
+        channel_width = (upper_channel - lower_channel) / middle_line * 100
+        
+        return upper_channel, middle_line, lower_channel, channel_width
+    except Exception as e:
+        print(f"Error calculating Keltner Channels: {str(e)}")
+        return None, None, None, None
+
+def calculate_bollinger_bands(df, period=20, std_dev=2):
+    """Calculate Bollinger Bands"""
+    try:
+        middle_band = df['close'].rolling(window=period).mean()
+        std = df['close'].rolling(window=period).std()
+        upper_band = middle_band + (std * std_dev)
+        lower_band = middle_band - (std * std_dev)
+        bandwidth = (upper_band - lower_band) / middle_band * 100
+        return upper_band, middle_band, lower_band, bandwidth
+    except Exception as e:
+        print(f"Error calculating Bollinger Bands: {str(e)}")
+        return None, None, None, None
 
 def calculate_roc(df, period=14):
     """Calculate Rate of Change (ROC) indicator"""
@@ -1096,9 +1150,95 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
             
             write_diagnostic_log(symbol, f"ROC filter: {roc_filter_passed} ({roc_value:.2f}%)")
 
+        # Calculate Bollinger Bands
+        upper_band, middle_band, lower_band, bandwidth = calculate_bollinger_bands(df)
+        if upper_band is not None:
+            current_price = latest['close']
+            
+            print(f"\nBollinger Bands Analysis:")
+            print(f"Upper Band: {upper_band.iloc[-1]:.5f}")
+            print(f"Middle Band: {middle_band.iloc[-1]:.5f}")
+            print(f"Lower Band: {lower_band.iloc[-1]:.5f}")
+            print(f"Bandwidth: {bandwidth.iloc[-1]:.2f}%")
+            
+            # Volatility-based filter using Bollinger Bands
+            bb_filter_passed = True
+            
+            # Check for volatility expansion/contraction
+            current_bandwidth = bandwidth.iloc[-1]
+            prev_bandwidth = bandwidth.iloc[-2]
+            
+            # Calculate bandwidth change as percentage
+            bandwidth_change = ((current_bandwidth - prev_bandwidth) / prev_bandwidth) * 100
+            
+            # Calculate Keltner Channels
+            kc_upper, kc_middle, kc_lower, kc_width = calculate_keltner_channels(
+                df, KC_PERIOD, KC_ATR_MULT, KC_USE_EMA
+            )
+            
+            # Print detailed volatility analysis
+            print("\nVolatility Indicators Analysis:")
+            print("\n1. Bollinger Bands Details:")
+            print(f"🔍 Current Bandwidth: {current_bandwidth:.2f}%")
+            print(f"🔍 Previous Bandwidth: {prev_bandwidth:.2f}%")
+            print(f"📊 Bandwidth Change: {bandwidth_change:+.2f}%")
+            print(f"📏 Price Distance from Middle Band: {((current_price - middle_band.iloc[-1]) / middle_band.iloc[-1] * 100):+.2f}%")
+            print(f"📈 Upper Band Distance: {((upper_band.iloc[-1] - middle_band.iloc[-1]) / middle_band.iloc[-1] * 100):.2f}%")
+            print(f"📉 Lower Band Distance: {((middle_band.iloc[-1] - lower_band.iloc[-1]) / middle_band.iloc[-1] * 100):.2f}%")
+            
+            if signal == 'BUY':
+                # Check for volatility expansion on buy signals
+                if bandwidth_change > 0:  # Expanding volatility
+                    print(f"✅ BB filter passed: Volatility expanding ({bandwidth_change:.2f}% bandwidth increase)")
+                else:
+                    bb_filter_passed = False
+                    print(f"⚠️ BB filter failed: Volatility contracting ({abs(bandwidth_change):.2f}% bandwidth decrease)")
+            else:  # SELL signal
+                # Also check for volatility expansion on sell signals
+                if bandwidth_change > 0:  # Expanding volatility
+                    print(f"✅ BB filter passed: Volatility expanding ({bandwidth_change:.2f}% bandwidth increase)")
+                else:
+                    bb_filter_passed = False
+                    print(f"⚠️ BB filter failed: Volatility contracting ({abs(bandwidth_change):.2f}% bandwidth decrease)")
+            
+            write_diagnostic_log(symbol, f"Bollinger Bands filter: {bb_filter_passed} (Bandwidth: {bandwidth.iloc[-1]:.2f}%)")
+            
+            # Calculate ATR
+            atr = calculate_atr(df, ATR_PERIOD)
+            current_atr = atr.iloc[-1]
+            avg_atr = atr.rolling(window=ATR_PERIOD*2).mean().iloc[-1]
+            atr_ratio = current_atr / avg_atr
+            
+            print("\n2. Keltner Channels Details:")
+            print(f"Upper Channel: {kc_upper.iloc[-1]:.5f}")
+            print(f"Middle Line: {kc_middle.iloc[-1]:.5f}")
+            print(f"Lower Channel: {kc_lower.iloc[-1]:.5f}")
+            print(f"Channel Width: {kc_width.iloc[-1]:.2f}%")
+            print(f"📊 Price Position: {((current_price - kc_middle.iloc[-1]) / kc_middle.iloc[-1] * 100):+.2f}%")
+            
+            # Compare BB and KC for volatility consensus
+            bb_kc_ratio = bandwidth.iloc[-1] / kc_width.iloc[-1]
+            print(f"\nVolatility Consensus:")
+            print(f"BB/KC Ratio: {bb_kc_ratio:.2f}")
+            print(f"{'🟢' if bb_kc_ratio > 1 else '🔴'} {'Expanding' if bb_kc_ratio > 1 else 'Contracting'} volatility")
+            
+            print("\n3. ATR Analysis:")
+            print(f"Current ATR: {current_atr:.5f}")
+            print(f"Average ATR: {avg_atr:.5f}")
+            print(f"ATR Ratio: {atr_ratio:.2f}x")
+        
+        atr_filter_passed = MIN_ATR_MULT <= atr_ratio <= MAX_ATR_MULT
+        if not atr_filter_passed:
+            if atr_ratio < MIN_ATR_MULT:
+                print(f"⚠️ ATR filter failed: Volatility too low ({atr_ratio:.2f}x < {MIN_ATR_MULT:.2f}x)")
+            else:
+                print(f"⚠️ ATR filter failed: Volatility too high ({atr_ratio:.2f}x > {MAX_ATR_MULT:.2f}x)")
+        else:
+            print(f"✅ ATR filter passed: Normal volatility ({atr_ratio:.2f}x)")
+            
         # Check all filters before proceeding
-        if adx_filter_passed and macd_filter_passed and roc_filter_passed:
-            write_diagnostic_log(symbol, "All filters (ADX, MACD, ROC) passed")
+        if adx_filter_passed and macd_filter_passed and roc_filter_passed and bb_filter_passed and atr_filter_passed:
+            write_diagnostic_log(symbol, "All filters (ADX, MACD, ROC, BB) passed")
             is_buy = signal == 'BUY'
             
             # Check for existing positions that might conflict

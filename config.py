@@ -121,6 +121,24 @@ MACD_ZERO_CROSS_CONFIRM = True  # Require histogram zero line cross confirmation
 AMA_FAST_EMA = 2
 AMA_SLOW_EMA = 30
 
+# Volatility Settings
+ATR_PERIOD = 14
+MAX_ATR_MULT = 2.0  # Maximum allowed ATR multiple
+MIN_ATR_MULT = 0.3  # Minimum required ATR multiple
+
+# Volatility Indicators Settings
+# Keltner Channels
+KC_PERIOD = 20
+KC_ATR_MULT = 2.0
+KC_USE_EMA = True  # Use EMA instead of SMA for middle line
+
+# Bollinger Bands Settings
+USE_BB_FILTER = True
+BB_PERIOD = 20
+BB_STD_DEV = 2
+BB_EXTENSION_THRESHOLD = 0.8  # Maximum allowed price extension (0-1)
+MIN_BB_BANDWIDTH = 0.5  # Minimum bandwidth percentage to trade
+
 # News Avoidance Settings
 MINUTES_BEFORE_NEWS = 30  # Avoid trading 30 minutes before high impact news
 MINUTES_AFTER_NEWS = 60   # Avoid trading 60 minutes after high impact news
