@@ -236,7 +236,8 @@ def prepare_order_request(symbol, order_type, lot_size, price, sl, tp):
         print(f"⚠️ Invalid symbol: {symbol_error}. Using default symbol: {SYMBOL}")
         symbol = SYMBOL
     
-    # Validate lot size
+    # Validate lot size and ensure 2 decimal places
+    lot_size = round(float(lot_size), 2)  # Round to 2 decimal places first
     lot_size, lot_valid, lot_error = validate_and_fix_input(
         lot_size,
         lambda x: validate_lot_size(x, min_lot=0.01, max_lot=10.0),
@@ -335,11 +336,13 @@ def open_buy_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pip
         print(f"⚠️ Invalid symbol: {symbol_error}. Using default symbol: {SYMBOL}")
         symbol = SYMBOL
     
-    # Validate lot size
+    # Validate lot size and ensure 2 decimal places
     if lot is None:
         print("⚠️ No lot size provided! Using minimum 0.01")
         lot = 0.01
     else:
+        # Round to 2 decimal places first
+        lot = round(float(lot), 2)
         lot, lot_valid, lot_error = validate_and_fix_input(
             lot,
             lambda x: validate_lot_size(x, min_lot=0.01, max_lot=10.0),
@@ -512,11 +515,13 @@ def open_sell_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pi
         print(f"⚠️ Invalid symbol: {symbol_error}. Using default symbol: {SYMBOL}")
         symbol = SYMBOL
     
-    # Validate lot size
+    # Validate lot size and ensure 2 decimal places
     if lot is None:
         print("⚠️ No lot size provided! Using minimum 0.01")
         lot = 0.01
     else:
+        # Round to 2 decimal places first
+        lot = round(float(lot), 2)
         lot, lot_valid, lot_error = validate_and_fix_input(
             lot,
             lambda x: validate_lot_size(x, min_lot=0.01, max_lot=10.0),

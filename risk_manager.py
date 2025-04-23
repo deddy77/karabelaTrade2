@@ -28,9 +28,12 @@ def calculate_lot_size(balance, risk_percent, stop_loss_pips, pip_value):
         risk_amount = balance * (risk_percent / 100)
         lot_size = risk_amount / (stop_loss_pips * pip_value)
         
+        # Round to 2 decimal places before applying constraints
+        lot_size = round(lot_size, 2)
+        
         # Apply broker constraints
         lot_size = max(MIN_LOT, min(lot_size, MAX_LOT))
-        return round(lot_size, 2)
+        return lot_size
     except Exception as e:
         print(f"Lot calculation error: {e}. Using MIN_LOT")
         return MIN_LOT
