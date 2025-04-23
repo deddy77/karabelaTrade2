@@ -23,7 +23,7 @@ DYNAMIC_SR_BUFFER_PIPS = 3
 USE_ADAPTIVE_MA = True
 MA_MEDIUM = 50   # AMA50 - Main signal line
 MA_LONG = 200   # AMA200 - Main trend line
-MIN_AMA_GAP_PERCENT = 0.02  # Minimum gap required
+MIN_AMA_GAP_PERCENT = 0.05  # Minimum gap required
 PRIMARY_SIGNAL = "AMA_CROSS"
 
 # Pivot Points Settings (Required by strategy)
@@ -38,50 +38,142 @@ PIVOT_REVERSAL_THRESHOLD = 0.5
 AMA_FAST_EMA = 2
 AMA_SLOW_EMA = 30
 
-# === SUPPORTING FILTERS (2 out of 3 needed) ===
+# === FILTER CONFIGURATION ===
 
-# 1. Momentum Filter
-USE_MOMENTUM_FILTER = True
-# RSI Settings
-RSI_PERIOD = 14
-RSI_OVERBOUGHT = 70
-RSI_OVERSOLD = 30
-USE_RSI_FILTER = False  # Not used in main strategy, kept for compatibility
+# Define SUPPORTING_FILTERS first to avoid reference errors
+SUPPORTING_FILTERS = {
+    # 1. Momentum Filter
+    "MOMENTUM": {
+        "ENABLED": True,
+        "REQUIRES": [],  # No dependencies
+        "COMPONENTS": {
+            "RSI": {
+                "ENABLED": True,
+                "PERIOD": 14,
+                "OVERBOUGHT": 70,
+                "OVERSOLD": 30
+            },
+            "ROC": {
+                "ENABLED": True,
+                "PERIOD": 14,
+                "THRESHOLD": 0
+            },
+            "MACD": {
+                "ENABLED": True,
+                "FAST": 12,
+                "SLOW": 26,
+                "SIGNAL": 9,
+                "GROWING_FACTOR": 1.05
+            }
+        }
+    },
+    
+    # 2. Trend Strength Filter
+    "TREND": {
+        "ENABLED": True,
+        "REQUIRES": [],  # No dependencies
+        "COMPONENTS": {
+            "ADX": {
+                "ENABLED": True,
+                "PERIOD": 14,
+                "THRESHOLD": 20,
+                "EXTREME": 40
+            },
+            "DI": {
+                "ENABLED": True,
+                "ALIGNMENT_CHECK": True
+            }
+        }
+    },
+    
+    # 3. Volume/Volatility Filter - Requires Momentum Filter
+    "VOLATILITY": {
+        "ENABLED": True,
+        "REQUIRES": ["MOMENTUM"],  # Requires momentum filter to be enabled
+        "COMPONENTS": {
+            "VOLUME": {
+                "ENABLED": True,
+                "MA_PERIOD": 20,
+                "MIN_RATIO": 1.2
+            },
+            "KELTNER": {
+                "ENABLED": True,
+                "PERIOD": 20,
+                "ATR_MULT": 2.0,
+                "USE_EMA": True
+            },
+            "BOLLINGER": {
+                "ENABLED": True,
+                "PERIOD": 20,
+                "STD_DEV": 2,
+                "MIN_EXPANSION": 0.05,
+                "EXTENSION_THRESHOLD": 0.8,
+                "MIN_BANDWIDTH": 0.5
+            }
+        }
+    }
+}
 
-# ROC Settings
-ROC_PERIOD = 14
-ROC_THRESHOLD = 0  # Positive/Negative threshold
+# Main Signal Configuration - AMA is the primary signal
+MAIN_SIGNAL = {
+    "TYPE": "AMA",  # Main signal type
+    "ENABLED": True,  # Cannot be disabled as it's the main signal
+    "PARAMETERS": {
+        "MA_MEDIUM": 50,    # AMA50 - Main signal line
+        "MA_LONG": 200,     # AMA200 - Main trend line
+        "MIN_GAP_PERCENT": 0.05  # Minimum gap required
+    }
+}
 
-# MACD Settings
-MACD_FAST = 12
-MACD_SLOW = 26
-MACD_SIGNAL = 9
-MACD_GROWING_FACTOR = 1.05  # Minimum growth between bars
+# Supporting Filters Configuration
+USE_SUPPORTING_FILTERS = True  # Master switch for all supporting filters
+REQUIRED_FILTER_CONFIRMATIONS = 2  # Must have 2 out of 3 filters confirm when enabled
 
-# 2. Trend Strength Filter
-USE_TREND_FILTER = True
-ADX_PERIOD = 14
-ADX_THRESHOLD = 20    # Strong trend threshold
-DI_ALIGNMENT = True   # Check +DI/-DI alignment with trend
+# When USE_SUPPORTING_FILTERS is False, only the main AMA signal is used
+# When True, requires REQUIRED_FILTER_CONFIRMATIONS number of supporting filters
 
-# 3. Volume/Volatility Filter
-USE_VOL_FILTER = True
-VOLUME_MA_PERIOD = 20
-MIN_VOLUME_RATIO = 1.2  # Minimum volume ratio vs average
+# Backward compatibility variables
+USE_MOMENTUM_FILTER = SUPPORTING_FILTERS["MOMENTUM"]["ENABLED"]
+USE_TREND_FILTER = SUPPORTING_FILTERS["TREND"]["ENABLED"]
+USE_VOL_FILTER = SUPPORTING_FILTERS["VOLATILITY"]["ENABLED"]
 
-# Volatility Indicators
-# Keltner Channels
-KC_PERIOD = 20
-KC_ATR_MULT = 2.0
-KC_USE_EMA = True  # Use EMA instead of SMA for middle line
+# RSI Settings (backward compatibility)
+RSI_PERIOD = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["RSI"]["PERIOD"]
+RSI_OVERBOUGHT = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["RSI"]["OVERBOUGHT"]
+RSI_OVERSOLD = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["RSI"]["OVERSOLD"]
+USE_RSI_FILTER = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["RSI"]["ENABLED"]
 
-# Bollinger Bands for Volatility
-BB_PERIOD = 20
-BB_STD_DEV = 2
-BB_MIN_EXPANSION = 0.05  # 5% minimum bandwidth expansion
-USE_BB_FILTER = True
-BB_EXTENSION_THRESHOLD = 0.8
-MIN_BB_BANDWIDTH = 0.5
+# ROC Settings (backward compatibility)
+ROC_PERIOD = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["ROC"]["PERIOD"]
+ROC_THRESHOLD = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["ROC"]["THRESHOLD"]
+
+# MACD Settings (backward compatibility)
+MACD_FAST = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["MACD"]["FAST"]
+MACD_SLOW = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["MACD"]["SLOW"]
+MACD_SIGNAL = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["MACD"]["SIGNAL"]
+MACD_GROWING_FACTOR = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["MACD"]["GROWING_FACTOR"]
+
+# ADX Settings (backward compatibility)
+ADX_PERIOD = SUPPORTING_FILTERS["TREND"]["COMPONENTS"]["ADX"]["PERIOD"]
+ADX_THRESHOLD = SUPPORTING_FILTERS["TREND"]["COMPONENTS"]["ADX"]["THRESHOLD"]
+DI_ALIGNMENT = SUPPORTING_FILTERS["TREND"]["COMPONENTS"]["DI"]["ALIGNMENT_CHECK"]
+
+# Volume/Volatility Settings (backward compatibility)
+VOLUME_MA_PERIOD = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["VOLUME"]["MA_PERIOD"]
+MIN_VOLUME_RATIO = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["VOLUME"]["MIN_RATIO"]
+
+# Keltner Channels (backward compatibility)
+KC_PERIOD = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["KELTNER"]["PERIOD"]
+KC_ATR_MULT = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["KELTNER"]["ATR_MULT"]
+KC_USE_EMA = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["KELTNER"]["USE_EMA"]
+
+# Bollinger Bands (backward compatibility)
+BB_PERIOD = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["BOLLINGER"]["PERIOD"]
+BB_STD_DEV = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["BOLLINGER"]["STD_DEV"]
+BB_MIN_EXPANSION = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["BOLLINGER"]["MIN_EXPANSION"]
+USE_BB_FILTER = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["BOLLINGER"]["ENABLED"]
+BB_EXTENSION_THRESHOLD = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["BOLLINGER"]["EXTENSION_THRESHOLD"]
+MIN_BB_BANDWIDTH = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["BOLLINGER"]["MIN_BANDWIDTH"]
 
 # Risk Management
 DEFAULT_RISK_PERCENT = 1.0
