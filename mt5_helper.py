@@ -228,9 +228,25 @@ def check_market_conditions(symbol=SYMBOL):
     
     return True
 
-def prepare_order_request(symbol, order_type, lot_size, price, sl, tp):
+def prepare_order_request(symbol, order_type, lot_size, price, sl=None, tp=None):
     """Prepare the order request with enhanced validation and error handling"""
+    from config import USE_FIXED_SLTP, FIXED_SL_POINTS, FIXED_TP_POINTS
     # Validate symbol
+    # Get fixed SL/TP prices if enabled
+    if USE_FIXED_SLTP:
+        symbol_info = mt5.symbol_info(symbol)
+        if not symbol_info:
+            print(f"Failed to get symbol info for {symbol}")
+            return None
+            
+        point = symbol_info.point
+        if order_type == mt5.ORDER_TYPE_BUY:
+            sl = price - (FIXED_SL_POINTS * point)
+            tp = price + (FIXED_TP_POINTS * point)
+        else:  # SELL
+            sl = price + (FIXED_SL_POINTS * point)
+            tp = price - (FIXED_TP_POINTS * point)
+    
     symbol_valid, symbol_error = validate_symbol(symbol)
     if not symbol_valid:
         print(f"⚠️ Invalid symbol: {symbol_error}. Using default symbol: {SYMBOL}")

@@ -2,27 +2,55 @@
 # Trading Strategy Configuration
 # ================================
 
-# Timeframes for analysis
-ANALYSIS_TIMEFRAMES = ["M5", "M15", "H1"]  # Multi-timeframe analysis
+# Primary timeframe setting (can be changed to M1, M5, M15, H1, H4)
+TIMEFRAME = "M15"  # Primary timeframe
+
+# Function to get analysis timeframes based on primary timeframe
+def get_analysis_timeframes(primary_tf):
+    timeframe_hierarchy = {
+        "M1": ["M1", "M5", "M15"],
+        "M5": ["M5", "M15", "H1"],
+        "M15": ["M15", "H1", "H4"],
+        "H1": ["H1", "H4", "D1"],
+        "H4": ["H4", "D1", "W1"]
+    }
+    return timeframe_hierarchy.get(primary_tf, ["M5", "M15", "H1"])
 
 # Trading settings for multiple symbols  
 SYMBOLS = ["EURUSD", "AUDUSD", "GBPUSD", "USDCHF"]
-TIMEFRAME = "M5"  # Primary timeframe
+
+# Analysis timeframes are dynamically set based on primary timeframe
+ANALYSIS_TIMEFRAMES = get_analysis_timeframes(TIMEFRAME)
+
+# Timeframe multipliers for adjusting analysis periods
+TIMEFRAME_MULTIPLIERS = {
+    "M1": 1,
+    "M5": 5,
+    "M15": 15,
+    "H1": 60,
+    "H4": 240
+}
+
+# Function to adjust period based on timeframe
+def adjust_period(base_period, from_tf="M5", to_tf=TIMEFRAME):
+    from_minutes = TIMEFRAME_MULTIPLIERS.get(from_tf, 5)
+    to_minutes = TIMEFRAME_MULTIPLIERS.get(to_tf, 5)
+    return max(2, int((base_period * from_minutes) / to_minutes))
 
 # Market Structure Settings
 USE_PRICE_ACTION = True  # Required by strategy code
 USE_SWING_POINTS = True
 USE_DYNAMIC_SR = True
-MIN_PATTERN_BARS = 3
-SUPPORT_RESISTANCE_LOOKBACK = 20
-DYNAMIC_SR_LOOKBACK = 50
+MIN_PATTERN_BARS = adjust_period(3)
+SUPPORT_RESISTANCE_LOOKBACK = adjust_period(20)
+DYNAMIC_SR_LOOKBACK = adjust_period(50)
 DYNAMIC_SR_MIN_TOUCHES = 2
 DYNAMIC_SR_BUFFER_PIPS = 3
 
 # MAIN SIGNAL - AMA Crossover
 USE_ADAPTIVE_MA = True
-MA_MEDIUM = 50   # AMA50 - Main signal line
-MA_LONG = 200   # AMA200 - Main trend line
+MA_MEDIUM = adjust_period(50)   # AMA50 - Main signal line
+MA_LONG = adjust_period(200)   # AMA200 - Main trend line
 MIN_AMA_GAP_PERCENT = 0.05  # Minimum gap required
 PRIMARY_SIGNAL = "AMA_CROSS"
 
@@ -40,8 +68,10 @@ AMA_SLOW_EMA = 30
 
 # === FILTER CONFIGURATION ===
 
+from typing import Dict, List, Any, Union
+
 # Define SUPPORTING_FILTERS first to avoid reference errors
-SUPPORTING_FILTERS = {
+SUPPORTING_FILTERS: Dict[str, Dict[str, Any]] = {
     # 1. Momentum Filter
     "MOMENTUM": {
         "ENABLED": True,
@@ -114,8 +144,28 @@ SUPPORTING_FILTERS = {
     }
 }
 
+# Update indicator periods based on timeframe
+def update_indicator_periods() -> None:
+    # Update momentum filter periods
+    SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["RSI"]["PERIOD"] = adjust_period(14)
+    SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["ROC"]["PERIOD"] = adjust_period(14)
+    SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["MACD"]["FAST"] = adjust_period(12)
+    SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["MACD"]["SLOW"] = adjust_period(26)
+    SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["MACD"]["SIGNAL"] = adjust_period(9)
+    
+    # Update trend filter periods
+    SUPPORTING_FILTERS["TREND"]["COMPONENTS"]["ADX"]["PERIOD"] = adjust_period(14)
+    
+    # Update volatility filter periods
+    SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["VOLUME"]["MA_PERIOD"] = adjust_period(20)
+    SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["KELTNER"]["PERIOD"] = adjust_period(20)
+    SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["BOLLINGER"]["PERIOD"] = adjust_period(20)
+
+# Call the function to update periods based on current timeframe
+update_indicator_periods()
+
 # Main Signal Configuration - AMA is the primary signal
-MAIN_SIGNAL = {
+MAIN_SIGNAL: Dict[str, Any] = {
     "TYPE": "AMA",  # Main signal type
     "ENABLED": True,  # Cannot be disabled as it's the main signal
     "PARAMETERS": {
@@ -132,48 +182,58 @@ REQUIRED_FILTER_CONFIRMATIONS = 2  # Must have 2 out of 3 filters confirm when e
 # When USE_SUPPORTING_FILTERS is False, only the main AMA signal is used
 # When True, requires REQUIRED_FILTER_CONFIRMATIONS number of supporting filters
 
-# Backward compatibility variables
-USE_MOMENTUM_FILTER = SUPPORTING_FILTERS["MOMENTUM"]["ENABLED"]
-USE_TREND_FILTER = SUPPORTING_FILTERS["TREND"]["ENABLED"]
-USE_VOL_FILTER = SUPPORTING_FILTERS["VOLATILITY"]["ENABLED"]
+# Helper function to safely access nested dictionary values
+def get_filter_value(filter_type: str, *keys: str, default: Any = None) -> Any:
+    try:
+        value = SUPPORTING_FILTERS[filter_type]
+        for key in keys:
+            value = value[key]
+        return value
+    except (KeyError, TypeError):
+        return default
+
+# Backward compatibility variables with type hints
+USE_MOMENTUM_FILTER: bool = get_filter_value("MOMENTUM", "ENABLED", default=True)
+USE_TREND_FILTER: bool = get_filter_value("TREND", "ENABLED", default=True)
+USE_VOL_FILTER: bool = get_filter_value("VOLATILITY", "ENABLED", default=True)
 
 # RSI Settings (backward compatibility)
-RSI_PERIOD = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["RSI"]["PERIOD"]
-RSI_OVERBOUGHT = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["RSI"]["OVERBOUGHT"]
-RSI_OVERSOLD = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["RSI"]["OVERSOLD"]
-USE_RSI_FILTER = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["RSI"]["ENABLED"]
+RSI_PERIOD: int = get_filter_value("MOMENTUM", "COMPONENTS", "RSI", "PERIOD", default=14)
+RSI_OVERBOUGHT: int = get_filter_value("MOMENTUM", "COMPONENTS", "RSI", "OVERBOUGHT", default=70)
+RSI_OVERSOLD: int = get_filter_value("MOMENTUM", "COMPONENTS", "RSI", "OVERSOLD", default=30)
+USE_RSI_FILTER: bool = get_filter_value("MOMENTUM", "COMPONENTS", "RSI", "ENABLED", default=True)
 
 # ROC Settings (backward compatibility)
-ROC_PERIOD = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["ROC"]["PERIOD"]
-ROC_THRESHOLD = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["ROC"]["THRESHOLD"]
+ROC_PERIOD: int = get_filter_value("MOMENTUM", "COMPONENTS", "ROC", "PERIOD", default=14)
+ROC_THRESHOLD: int = get_filter_value("MOMENTUM", "COMPONENTS", "ROC", "THRESHOLD", default=0)
 
 # MACD Settings (backward compatibility)
-MACD_FAST = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["MACD"]["FAST"]
-MACD_SLOW = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["MACD"]["SLOW"]
-MACD_SIGNAL = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["MACD"]["SIGNAL"]
-MACD_GROWING_FACTOR = SUPPORTING_FILTERS["MOMENTUM"]["COMPONENTS"]["MACD"]["GROWING_FACTOR"]
+MACD_FAST: int = get_filter_value("MOMENTUM", "COMPONENTS", "MACD", "FAST", default=12)
+MACD_SLOW: int = get_filter_value("MOMENTUM", "COMPONENTS", "MACD", "SLOW", default=26)
+MACD_SIGNAL: int = get_filter_value("MOMENTUM", "COMPONENTS", "MACD", "SIGNAL", default=9)
+MACD_GROWING_FACTOR: float = get_filter_value("MOMENTUM", "COMPONENTS", "MACD", "GROWING_FACTOR", default=1.05)
 
 # ADX Settings (backward compatibility)
-ADX_PERIOD = SUPPORTING_FILTERS["TREND"]["COMPONENTS"]["ADX"]["PERIOD"]
-ADX_THRESHOLD = SUPPORTING_FILTERS["TREND"]["COMPONENTS"]["ADX"]["THRESHOLD"]
-DI_ALIGNMENT = SUPPORTING_FILTERS["TREND"]["COMPONENTS"]["DI"]["ALIGNMENT_CHECK"]
+ADX_PERIOD: int = get_filter_value("TREND", "COMPONENTS", "ADX", "PERIOD", default=14)
+ADX_THRESHOLD: int = get_filter_value("TREND", "COMPONENTS", "ADX", "THRESHOLD", default=20)
+DI_ALIGNMENT: bool = get_filter_value("TREND", "COMPONENTS", "DI", "ALIGNMENT_CHECK", default=True)
 
 # Volume/Volatility Settings (backward compatibility)
-VOLUME_MA_PERIOD = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["VOLUME"]["MA_PERIOD"]
-MIN_VOLUME_RATIO = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["VOLUME"]["MIN_RATIO"]
+VOLUME_MA_PERIOD: int = get_filter_value("VOLATILITY", "COMPONENTS", "VOLUME", "MA_PERIOD", default=20)
+MIN_VOLUME_RATIO: float = get_filter_value("VOLATILITY", "COMPONENTS", "VOLUME", "MIN_RATIO", default=1.2)
 
 # Keltner Channels (backward compatibility)
-KC_PERIOD = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["KELTNER"]["PERIOD"]
-KC_ATR_MULT = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["KELTNER"]["ATR_MULT"]
-KC_USE_EMA = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["KELTNER"]["USE_EMA"]
+KC_PERIOD: int = get_filter_value("VOLATILITY", "COMPONENTS", "KELTNER", "PERIOD", default=20)
+KC_ATR_MULT: float = get_filter_value("VOLATILITY", "COMPONENTS", "KELTNER", "ATR_MULT", default=2.0)
+KC_USE_EMA: bool = get_filter_value("VOLATILITY", "COMPONENTS", "KELTNER", "USE_EMA", default=True)
 
 # Bollinger Bands (backward compatibility)
-BB_PERIOD = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["BOLLINGER"]["PERIOD"]
-BB_STD_DEV = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["BOLLINGER"]["STD_DEV"]
-BB_MIN_EXPANSION = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["BOLLINGER"]["MIN_EXPANSION"]
-USE_BB_FILTER = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["BOLLINGER"]["ENABLED"]
-BB_EXTENSION_THRESHOLD = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["BOLLINGER"]["EXTENSION_THRESHOLD"]
-MIN_BB_BANDWIDTH = SUPPORTING_FILTERS["VOLATILITY"]["COMPONENTS"]["BOLLINGER"]["MIN_BANDWIDTH"]
+BB_PERIOD: int = get_filter_value("VOLATILITY", "COMPONENTS", "BOLLINGER", "PERIOD", default=20)
+BB_STD_DEV: int = get_filter_value("VOLATILITY", "COMPONENTS", "BOLLINGER", "STD_DEV", default=2)
+BB_MIN_EXPANSION: float = get_filter_value("VOLATILITY", "COMPONENTS", "BOLLINGER", "MIN_EXPANSION", default=0.05)
+USE_BB_FILTER: bool = get_filter_value("VOLATILITY", "COMPONENTS", "BOLLINGER", "ENABLED", default=True)
+BB_EXTENSION_THRESHOLD: float = get_filter_value("VOLATILITY", "COMPONENTS", "BOLLINGER", "EXTENSION_THRESHOLD", default=0.8)
+MIN_BB_BANDWIDTH: float = get_filter_value("VOLATILITY", "COMPONENTS", "BOLLINGER", "MIN_BANDWIDTH", default=0.5)
 
 # Risk Management
 DEFAULT_RISK_PERCENT = 1.0
@@ -181,6 +241,11 @@ MIN_LOT = 0.04
 MAX_LOT = 10.0
 DEFAULT_TP_MULTIPLIER = 2.0
 DEFAULT_TP_PIPS = None
+
+# Fixed SL/TP Settings
+USE_FIXED_SLTP = True  # If True, uses fixed values instead of risk management calculations
+FIXED_TP_POINTS = 30   # Fixed take profit in points
+FIXED_SL_POINTS = 300  # Fixed stop loss in points
 
 # ATR Settings for Stop Loss
 ATR_PERIOD = 14
@@ -192,12 +257,19 @@ MARKET_OPEN_DAY = 6  # Sunday
 MARKET_CLOSE_DAY = 4  # Friday
 MARKET_OPEN_HOUR = 17  # 5PM EST
 
+# Function to get appropriate MTF weights based on timeframe
+def get_mtf_weights(timeframe: str) -> Dict[str, float]:
+    weights = {
+        "M1": {"M1": 0.5, "M5": 0.3, "M15": 0.2},
+        "M5": {"M5": 0.5, "M15": 0.3, "H1": 0.2},
+        "M15": {"M15": 0.5, "H1": 0.3, "H4": 0.2},
+        "H1": {"H1": 0.5, "H4": 0.3, "D1": 0.2},
+        "H4": {"H4": 0.5, "D1": 0.3, "W1": 0.2}
+    }
+    return weights.get(timeframe, {"M5": 0.5, "M15": 0.3, "H1": 0.2})
+
 # Multi-Timeframe Analysis Settings
-MTF_WEIGHTS = {
-    "M5": 0.5,
-    "M15": 0.3,
-    "H1": 0.2
-}
+MTF_WEIGHTS = get_mtf_weights(TIMEFRAME)
 MTF_AGREEMENT_THRESHOLD = 0.7  # 70% agreement needed between timeframes
 MTF_INDICATORS = {
     "MA_CROSSOVER": True,

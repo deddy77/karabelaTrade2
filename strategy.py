@@ -798,11 +798,20 @@ def calculate_ama(df, period, fast_ema=2, slow_ema=30):
     
     ama = pd.Series(index=df.index, dtype='float64')
     
-    start_index = period + 50
+    # More flexible initialization
+    start_index = period
+    if len(df) <= start_index:
+        return pd.Series([np.nan] * len(df), index=df.index)
+        
+    # Initialize first value
     ama.iloc[start_index] = df['close'].iloc[start_index]
     
+    # Calculate AMA values
     for i in range(start_index + 1, len(df)):
         ama.iloc[i] = ama.iloc[i-1] + sc.iloc[i] * (df['close'].iloc[i] - ama.iloc[i-1])
+    
+    # Fill initial values with NaN
+    ama.iloc[:start_index] = np.nan
     
     return ama
 
@@ -1372,10 +1381,10 @@ def analyze_multiple_timeframes_weighted(symbol, timeframes=ANALYSIS_TIMEFRAMES,
     """Analyze M5 timeframe for AMA50/AMA200 crossover signals"""
     signals = initialize_signals()
     
-    print(f"\n=== M5 AMA Analysis for {symbol} ===")
+    print(f"\n=== {TIMEFRAME} AMA Analysis for {symbol} ===")
     
-    # Get M5 data
-    df = prepare_timeframe_data(symbol, "M5")
+    # Get data for current timeframe
+    df = prepare_timeframe_data(symbol, TIMEFRAME)
     if df is None or len(df) < 2:
         print("Not enough M5 data available")
         return signals
@@ -1394,50 +1403,50 @@ def analyze_multiple_timeframes_weighted(symbol, timeframes=ANALYSIS_TIMEFRAMES,
     
     # Check AMA crossover
     if latest['ma_medium'] > latest['ma_long']:
-        # Check if price is above AMA50 to confirm bullish trend
-        price_confirms_trend = latest['close'] > latest['ma_medium']
-        
-        if sufficient_gap and price_confirms_trend:
-            # Bullish setup
-            signals['weighted_buy_score'] = 100
-            signals['overall_signal'] = 'BUY'
-            signals['signal_strength'] = 100
-            print("🟢 Bullish Setup: AMA50 > AMA200")
-            print(f"🟢 AMA Gap: {ama_gap_percent:.2f}% (minimum: {MIN_AMA_GAP_PERCENT:.2f}%)")
-            print(f"🟢 Price confirmation: Price ({latest['close']:.5f}) > AMA50 ({latest['ma_medium']:.5f})")
-            
-            if prev['ma_medium'] <= prev['ma_long']:
-                print("🟢 Fresh Golden Cross Detected!")
+        # For BUY signals, price MUST be above AMA50
+        if latest['close'] > latest['ma_medium']:
+            if sufficient_gap:
+                # Bullish setup
+                signals['weighted_buy_score'] = 100
+                signals['overall_signal'] = 'BUY'
+                signals['signal_strength'] = 100
+                print("🟢 Bullish Setup: AMA50 > AMA200")
+                print(f"🟢 AMA Gap: {ama_gap_percent:.2f}% (minimum: {MIN_AMA_GAP_PERCENT:.2f}%)")
+                print(f"🟢 Price confirmation: Price ({latest['close']:.5f}) > AMA50 ({latest['ma_medium']:.5f})")
+                
+                if prev['ma_medium'] <= prev['ma_long']:
+                    print("🟢 Fresh Golden Cross Detected!")
+            else:
+                signals['overall_signal'] = 'NEUTRAL'
+                signals['signal_strength'] = 0
+                print(f"⚠️ Insufficient gap between AMAs: {ama_gap_percent:.2f}% (minimum: {MIN_AMA_GAP_PERCENT:.2f}%)")
         else:
             signals['overall_signal'] = 'NEUTRAL'
             signals['signal_strength'] = 0
-            if not sufficient_gap:
-                print(f"⚠️ Insufficient gap between AMAs: {ama_gap_percent:.2f}% (minimum: {MIN_AMA_GAP_PERCENT:.2f}%)")
-            if not price_confirms_trend:
-                print(f"⚠️ Price ({latest['close']:.5f}) below AMA50 ({latest['ma_medium']:.5f}) - trend not confirmed")
+            print(f"⚠️ Price ({latest['close']:.5f}) below AMA50 ({latest['ma_medium']:.5f}) - trend not confirmed")
             
     elif latest['ma_medium'] < latest['ma_long']:
-        # Check if price is below AMA50 to confirm bearish trend
-        price_confirms_trend = latest['close'] < latest['ma_medium']
-        
-        if sufficient_gap and price_confirms_trend:
-            # Bearish setup
-            signals['weighted_sell_score'] = 100
-            signals['overall_signal'] = 'SELL'
-            signals['signal_strength'] = 100
-            print("🔴 Bearish Setup: AMA50 < AMA200")
-            print(f"🔴 AMA Gap: {ama_gap_percent:.2f}% (minimum: {MIN_AMA_GAP_PERCENT:.2f}%)")
-            print(f"🔴 Price confirmation: Price ({latest['close']:.5f}) < AMA50 ({latest['ma_medium']:.5f})")
-            
-            if prev['ma_medium'] >= prev['ma_long']:
-                print("🔴 Fresh Death Cross Detected!")
+        # For SELL signals, price MUST be below AMA50
+        if latest['close'] < latest['ma_medium']:
+            if sufficient_gap:
+                # Bearish setup
+                signals['weighted_sell_score'] = 100
+                signals['overall_signal'] = 'SELL'
+                signals['signal_strength'] = 100
+                print("🔴 Bearish Setup: AMA50 < AMA200")
+                print(f"🔴 AMA Gap: {ama_gap_percent:.2f}% (minimum: {MIN_AMA_GAP_PERCENT:.2f}%)")
+                print(f"🔴 Price confirmation: Price ({latest['close']:.5f}) < AMA50 ({latest['ma_medium']:.5f})")
+                
+                if prev['ma_medium'] >= prev['ma_long']:
+                    print("🔴 Fresh Death Cross Detected!")
+            else:
+                signals['overall_signal'] = 'NEUTRAL'
+                signals['signal_strength'] = 0
+                print(f"⚠️ Insufficient gap between AMAs: {ama_gap_percent:.2f}% (minimum: {MIN_AMA_GAP_PERCENT:.2f}%)")
         else:
             signals['overall_signal'] = 'NEUTRAL'
             signals['signal_strength'] = 0
-            if not sufficient_gap:
-                print(f"⚠️ Insufficient gap between AMAs: {ama_gap_percent:.2f}% (minimum: {MIN_AMA_GAP_PERCENT:.2f}%)")
-            if not price_confirms_trend:
-                print(f"⚠️ Price ({latest['close']:.5f}) above AMA50 ({latest['ma_medium']:.5f}) - trend not confirmed")
+            print(f"⚠️ Price ({latest['close']:.5f}) above AMA50 ({latest['ma_medium']:.5f}) - trend not confirmed")
             
     else:
         signals['overall_signal'] = 'NEUTRAL'
@@ -1655,7 +1664,29 @@ def execute_trade(symbol, is_buy, lot_size, sl_pips, tp_pips):
 
 def prepare_market_data(symbol):
     """Prepare market data and calculate indicators"""
-    df = get_historical_data(symbol, TIMEFRAME, bars_count=400)  # Increased for AMA200
+    # Dynamically adjust bars_count based on timeframe
+    # For lower timeframes like M1, we need more bars; for higher timeframes like H4, we need fewer
+    from config import TIMEFRAME_MULTIPLIERS
+    
+    # Base number of bars needed for M5 timeframe
+    base_bars = 400
+    
+    # Get multiplier for current timeframe (default to 1 if not found)
+    tf_multiplier = TIMEFRAME_MULTIPLIERS.get(TIMEFRAME, 1)
+    
+    # Calculate adjusted bars count - for lower timeframes we need more bars
+    # For M1, we'll request 5x more bars than M5; for H4, we'll request 1/12 of M5 bars
+    if tf_multiplier < 5:  # For timeframes lower than M5 (like M1)
+        adjusted_bars = int(base_bars * (5 / tf_multiplier))
+    else:  # For timeframes higher than M5 (like H1, H4)
+        adjusted_bars = int(base_bars * (5 / tf_multiplier)) + 50  # Add buffer
+    
+    # Ensure we have at least 400 bars
+    bars_count = max(400, adjusted_bars)
+    
+    print(f"Requesting {bars_count} bars for {symbol} on {TIMEFRAME} timeframe")
+    df = get_historical_data(symbol, TIMEFRAME, bars_count=bars_count)
+    
     if df is None or len(df) == 0:
         print(f"No historical data available for {symbol}")
         return None
@@ -1695,7 +1726,7 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
     if current_session is None:
         return
         
-    print(f"\n=== Processing {symbol} on M5 timeframe ===")
+    print(f"\n=== Processing {symbol} on {TIMEFRAME} timeframe ===")
     
     if not initialize_mt5_connection(symbol):
         return
@@ -2100,6 +2131,10 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
                 print(f"Base lot size: {base_lot_size:.2f}")
                 print(f"Volume multiplier: {volume_multiplier:.2f}")
                 print(f"Final lot size: {final_lot_size:.2f}")
+                
+                # Log price position relative to AMA50
+                price_position = "above" if latest['close'] > latest['ma_medium'] else "below"
+                print(f"✅ Price {price_position} AMA50 ({latest['close']:.5f} vs {latest['ma_medium']:.5f})")
                 
                 last_trade_times[symbol] = current_time
                 execute_trade(symbol, is_buy, final_lot_size, sl_pips, tp_pips)
