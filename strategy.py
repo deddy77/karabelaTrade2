@@ -1453,8 +1453,8 @@ def analyze_multiple_timeframes_weighted(symbol, timeframes=ANALYSIS_TIMEFRAMES,
         signals['signal_strength'] = 0
         print("AMA lines equal - No clear trend")
         
-    # Store M5 signals
-    signals['timeframe_signals']["M5"] = {
+    # Store signals for current timeframe
+    signals['timeframe_signals'][TIMEFRAME] = {
         'signal': signals['overall_signal'],
         'ma_medium': latest['ma_medium'],
         'ma_long': latest['ma_long'],

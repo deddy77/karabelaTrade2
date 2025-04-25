@@ -161,7 +161,13 @@ def get_historical_data(symbol=SYMBOL, timeframe=TIMEFRAME, bars_count=100):
             print(f"❌ Failed to reconnect to MT5. Cannot get historical data for {symbol}")
             return None
     
-    mt5_timeframe = TIMEFRAME_MAP.get(timeframe, mt5.TIMEFRAME_M5)
+    # Timeframe fallback hierarchy:
+    # 1. First try the explicitly provided timeframe
+    # 2. Then fall back to TIMEFRAME from config.py
+    # 3. Finally use M5 as last resort
+    mt5_timeframe = TIMEFRAME_MAP.get(timeframe, TIMEFRAME_MAP.get(TIMEFRAME, mt5.TIMEFRAME_M5))
+    if mt5_timeframe == mt5.TIMEFRAME_M5 and timeframe != TIMEFRAME:
+        print(f"⚠️ Using M5 as fallback timeframe (provided: {timeframe}, config: {TIMEFRAME})")
     
     # Get current time and fetch data relative to now
     current_time = datetime.now()
