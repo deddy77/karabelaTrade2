@@ -1647,16 +1647,30 @@ def calculate_trade_parameters(symbol, is_buy, df):
     return lot_size, sl_pips, tp_pips
 
 def execute_trade(symbol, is_buy, lot_size, sl_pips, tp_pips):
-    """Execute the trade with given parameters"""
+    """Execute the trade with given parameters and log trade details"""
     try:
+        from trade_logger import log_trade_entry
+        entry_price = mt5.symbol_info_tick(symbol).ask if is_buy else mt5.symbol_info_tick(symbol).bid
+        
         if is_buy:
             print(f"Attempting to open BUY position for {symbol}:")
             print(f"Lot Size: {lot_size}, SL: {sl_pips} pips, TP: {tp_pips} pips")
-            open_buy_order(symbol, lot_size, stop_loss_pips=sl_pips, take_profit_pips=tp_pips)
+            result = open_buy_order(symbol, lot_size, stop_loss_pips=sl_pips, take_profit_pips=tp_pips)
         else:
             print(f"Attempting to open SELL position for {symbol}:")
             print(f"Lot Size: {lot_size}, SL: {sl_pips} pips, TP: {tp_pips} pips")
-            open_sell_order(symbol, lot_size, stop_loss_pips=sl_pips, take_profit_pips=tp_pips)
+            result = open_sell_order(symbol, lot_size, stop_loss_pips=sl_pips, take_profit_pips=tp_pips)
+            
+        if result:
+            log_trade_entry(
+                symbol=symbol,
+                direction='BUY' if is_buy else 'SELL',
+                entry_price=entry_price,
+                size=lot_size,
+                sl_pips=sl_pips,
+                tp_pips=tp_pips,
+                strategy='AMA_CROSS'
+            )
     except Exception as e:
         error_msg = f"Error executing order: {str(e)}"
         print(error_msg)

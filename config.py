@@ -215,12 +215,12 @@ MACD_GROWING_FACTOR: float = get_filter_value("MOMENTUM", "COMPONENTS", "MACD", 
 
 # ADX Settings (backward compatibility)
 ADX_PERIOD: int = get_filter_value("TREND", "COMPONENTS", "ADX", "PERIOD", default=14)
-ADX_THRESHOLD: int = get_filter_value("TREND", "COMPONENTS", "ADX", "THRESHOLD", default=20)
+ADX_THRESHOLD: int = get_filter_value("TREND", "COMPONENTS", "ADX", "THRESHOLD", default=15)
 DI_ALIGNMENT: bool = get_filter_value("TREND", "COMPONENTS", "DI", "ALIGNMENT_CHECK", default=True)
 
 # Volume/Volatility Settings (backward compatibility)
 VOLUME_MA_PERIOD: int = get_filter_value("VOLATILITY", "COMPONENTS", "VOLUME", "MA_PERIOD", default=20)
-MIN_VOLUME_RATIO: float = get_filter_value("VOLATILITY", "COMPONENTS", "VOLUME", "MIN_RATIO", default=1.2)
+MIN_VOLUME_RATIO: float = get_filter_value("VOLATILITY", "COMPONENTS", "VOLUME", "MIN_RATIO", default=0.8)
 
 # Keltner Channels (backward compatibility)
 KC_PERIOD: int = get_filter_value("VOLATILITY", "COMPONENTS", "KELTNER", "PERIOD", default=20)
@@ -279,7 +279,7 @@ MTF_INDICATORS = {
 
 # ADX Filter Settings
 USE_ADX_FILTER = True
-ADX_EXTREME = 40  # Extremely strong trend threshold
+ADX_EXTREME = 30  # Extremely strong trend threshold
 
 # MACD Filter Settings
 USE_MACD_FILTER = True
