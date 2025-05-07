@@ -58,7 +58,7 @@ from config import (SYMBOL, TIMEFRAME, MA_MEDIUM, MA_LONG, ATR_PERIOD, MAX_ATR_M
                   DEFAULT_TP_PIPS, RSI_PERIOD, RSI_OVERBOUGHT, RSI_OVERSOLD, USE_RSI_FILTER,
                   USE_PRICE_ACTION, MIN_PATTERN_BARS, SUPPORT_RESISTANCE_LOOKBACK,
                   ANALYSIS_TIMEFRAMES, MTF_WEIGHTS, MTF_AGREEMENT_THRESHOLD, MTF_INDICATORS,
-                  TRADING_SESSIONS, SESSION_PARAMS, MIN_AMA_GAP_PERCENT,
+                  session_mgr, MIN_AMA_GAP_PERCENT,
                   USE_ADX_FILTER, ADX_PERIOD, ADX_THRESHOLD, ADX_EXTREME,
                   USE_MACD_FILTER, MACD_FAST, MACD_SLOW, MACD_SIGNAL,
                   MACD_CONSECUTIVE_BARS, MACD_GROWING_FACTOR, MACD_ZERO_CROSS_CONFIRM,
@@ -1464,49 +1464,33 @@ def analyze_multiple_timeframes_weighted(symbol, timeframes=ANALYSIS_TIMEFRAMES,
     print(f"\nFinal Signal: {signals['overall_signal']}")
     return signals
 
-def get_current_session():
-    """Determine current trading session based on time of day"""
-    now = datetime.now()
-    current_hour = now.hour
-    
-    for session, times in TRADING_SESSIONS.items():
-        start = times['start_hour']
-        end = times['end_hour']
-        
-        # Handle sessions that span midnight (like Asian session)
-        if start > end:  # Session crosses midnight
-            if current_hour >= start or current_hour < end:
-                return session
-        else:  # Normal session within same day
-            if start <= current_hour < end:
-                return session
-    
-    return None  # No active session found
-
-def get_session_parameters(base_risk_percent):
+def get_session_parameters(symbol, base_risk_percent=1.0):
     """Get session-specific trading parameters"""
-    current_session = get_current_session()
+    from config import session_mgr, DEFAULT_RISK_PERCENT
+    params = session_mgr.get_session_parameters(symbol, base_risk_percent)
     
-    if current_session is None:
-        print("No active trading session")
+    if not params["should_trade"]:
+        print(f"Trading not recommended for {symbol} in current session")
         return None, None, None
         
-    # Get session parameters
-    session_params = SESSION_PARAMS.get(current_session, {})
+    # Get session status information
+    status = params["status"]
+    print(f"\nSession Status for {symbol}:")
+    print(f"Priority: {status['priority']}")
+    print(f"Active Sessions: {', '.join(status['active_sessions'])}")
+    if status["is_overlap"]:
+        print("🔥 High-liquidity overlap period")
+        
+    # Use effective risk from session parameters
+    effective_risk = params["effective_risk_percent"]
+    timeframe = params["timeframe"]
     
-    # Calculate effective risk based on session risk multiplier
-    risk_multiplier = session_params.get('risk_multiplier', 1.0)
-    effective_risk = base_risk_percent * risk_multiplier
-    
-    # Get RSI filter setting for session
-    use_rsi = session_params.get('use_rsi_filter', USE_RSI_FILTER)
-    
-    print(f"\nCurrent Session: {current_session}")
-    print(f"Risk Multiplier: {risk_multiplier}")
+    print(f"Risk Multiplier: {params['risk_multiplier']}")
+    print(f"Base Risk: {params['base_risk_percent']}%")
     print(f"Effective Risk: {effective_risk}%")
-    print(f"Using RSI Filter: {use_rsi}")
+    print(f"Using Timeframe: {timeframe}")
     
-    return current_session, effective_risk, use_rsi
+    return status["priority"], effective_risk, timeframe
 
 def has_upcoming_high_impact_news(symbol):
     """Check if there's upcoming high impact news for the symbol's currency"""
@@ -1578,9 +1562,18 @@ def initialize_signals():
 
 def validate_trading_conditions(symbol, risk_percent=1.0):
     """Validate all conditions before trading"""
+    from config import session_mgr
+    
     # Initialize diagnostic logging
     write_diagnostic_log(symbol, f"Starting trade analysis for {symbol}")
     
+    # Check if we should trade this pair in current session
+    if not session_mgr.should_trade_pair(symbol):
+        msg = f"Skipping {symbol} - Not active in current session"
+        print(msg)
+        write_diagnostic_log(symbol, msg)
+        return False
+        
     # Check for upcoming high impact news
     if has_upcoming_high_impact_news(symbol):
         msg = f"Skipping trade due to upcoming high impact news"
@@ -1588,6 +1581,24 @@ def validate_trading_conditions(symbol, risk_percent=1.0):
         print(msg)
         write_diagnostic_log(symbol, msg)
         return False
+        
+    # Get session parameters with risk percent
+    session_params = session_mgr.get_session_parameters(symbol, risk_percent)
+    
+    if session_params is None:
+        msg = "Failed to get session parameters"
+        print(msg)
+        write_diagnostic_log(symbol, msg)
+        return False
+
+    # Check spread against session requirements
+    current_spread = mt5.symbol_info(symbol).spread * mt5.symbol_info(symbol).point
+    if current_spread > session_params["min_spread"]:
+        msg = f"Spread too high for current session: {current_spread} > {session_params['min_spread']}"
+        print(msg)
+        write_diagnostic_log(symbol, msg)
+        return False
+        
     return True
 
 def initialize_mt5_connection(symbol):
@@ -1630,13 +1641,13 @@ def handle_existing_positions(symbol, trade_signals, current_time):
                 return False
     return True
 
-def calculate_trade_parameters(symbol, is_buy, df):
+def calculate_trade_parameters(symbol, is_buy, df, effective_risk=1.0):
     """Calculate trade parameters like lot size and pip values"""
     lot_size, sl_pips = determine_lot(
         symbol,
         df,
         is_buy_signal=is_buy,
-        risk_percent=1.0
+        risk_percent=effective_risk
     )
     
     tp_pips = SYMBOL_SETTINGS.get(symbol, {}).get("TP_PIPS", DEFAULT_TP_PIPS)
@@ -1736,9 +1747,14 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
     if not validate_trading_conditions(symbol, risk_percent):
         return
         
-    current_session, effective_risk, _ = get_session_parameters(risk_percent)
+    # Get session parameters with updated risk handling
+    current_session, effective_risk, timeframe = get_session_parameters(symbol, risk_percent)
     if current_session is None:
         return
+        
+    # Update global timeframe if needed
+    global TIMEFRAME
+    TIMEFRAME = timeframe
         
     print(f"\n=== Processing {symbol} on {TIMEFRAME} timeframe ===")
     
@@ -2114,8 +2130,8 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
                 print(f"No historical data available for {symbol}")
                 return
                 
-            # Calculate base trade parameters
-            base_lot_size, sl_pips, tp_pips = calculate_trade_parameters(symbol, is_buy, risk_df)
+            # Calculate base trade parameters using effective risk
+            base_lot_size, sl_pips, tp_pips = calculate_trade_parameters(symbol, is_buy, risk_df, effective_risk)
             
             # Adjust position size based on volume confirmation and VWMA alignment
             volume_multiplier = 1.0
