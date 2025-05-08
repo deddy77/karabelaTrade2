@@ -1876,7 +1876,9 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
         # Check if price is above AMA50 to confirm bullish trend
         price_confirms_trend = latest['close'] > latest['ma_medium']
         
-        if sufficient_gap and price_confirms_trend:
+        # For BUY signals:
+        # AMA50 > AMA200 AND Price > AMA50, then check 2/3 supporting filters
+        if latest['ma_medium'] > latest['ma_long'] and latest['close'] > latest['ma_medium']:
             # Check supporting filters (need 2/3 to confirm)
             filter_count = 0
             if macd_filter_passed and roc_filter_passed:
@@ -1885,14 +1887,13 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
             if adx_filter_passed:
                 filter_count += 1
                 print("✅ Trend Strength Filter Confirmed (ADX > 20)")
-            if volume_analysis and bb_filter_passed and volume_analysis['volume_ratio'] > 1.2:  # Using earlier volume analysis
+            if volume_analysis and bb_filter_passed and volume_analysis['volume_ratio'] > 1.2:
                 filter_count += 1
                 print("✅ Volume/Volatility Filter Confirmed (Volume > 1.2x + BB expansion)")
                 
             if filter_count >= 2:
                 signal = 'BUY'
                 print("🟢 Bullish Setup: AMA50 > AMA200")
-                print(f"🟢 AMA Gap: {ama_gap_percent:.2f}% (minimum: {min_gap_percent:.2f}%)")
                 print(f"🟢 Price confirmation: Price ({latest['close']:.5f}) > AMA50 ({latest['ma_medium']:.5f})")
                 print(f"🟢 {filter_count}/3 Supporting Filters Confirmed")
                 
@@ -1901,16 +1902,15 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
             else:
                 print(f"⚠️ Only {filter_count}/3 Supporting Filters Confirmed - Signal Not Valid")
         else:
-            if not sufficient_gap:
-                print(f"⚠️ Insufficient gap between AMAs: {ama_gap_percent:.2f}% (minimum: {min_gap_percent:.2f}%)")
-            if not price_confirms_trend:
-                print(f"⚠️ Price ({latest['close']:.5f}) below AMA50 ({latest['ma_medium']:.5f}) - trend not confirmed")
+            print(f"⚠️ BUY conditions not met")
             
     elif latest['ma_medium'] < latest['ma_long']:
         # Check if price is below AMA50 to confirm bearish trend
         price_confirms_trend = latest['close'] < latest['ma_medium']
         
-        if sufficient_gap and price_confirms_trend:
+        # For SELL signals:
+        # AMA50 < AMA200 AND Price < AMA50, then check 2/3 supporting filters
+        if latest['ma_medium'] < latest['ma_long'] and latest['close'] < latest['ma_medium']:
             # Check supporting filters (need 2/3 to confirm)
             filter_count = 0
             if macd_filter_passed and roc_filter_passed:
@@ -1919,14 +1919,13 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
             if adx_filter_passed:
                 filter_count += 1
                 print("✅ Trend Strength Filter Confirmed (ADX > 20)")
-            if volume_analysis and bb_filter_passed and volume_analysis['volume_ratio'] > 1.2:  # Using volume analysis defined earlier
+            if volume_analysis and bb_filter_passed and volume_analysis['volume_ratio'] > 1.2:
                 filter_count += 1
                 print("✅ Volume/Volatility Filter Confirmed (Volume > 1.2x + BB expansion)")
                 
             if filter_count >= 2:
                 signal = 'SELL'
                 print("🔴 Bearish Setup: AMA50 < AMA200")
-                print(f"🔴 AMA Gap: {ama_gap_percent:.2f}% (minimum: {min_gap_percent:.2f}%)")
                 print(f"🔴 Price confirmation: Price ({latest['close']:.5f}) < AMA50 ({latest['ma_medium']:.5f})")
                 print(f"🔴 {filter_count}/3 Supporting Filters Confirmed")
                 
@@ -1935,10 +1934,7 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
             else:
                 print(f"⚠️ Only {filter_count}/3 Supporting Filters Confirmed - Signal Not Valid")
         else:
-            if not sufficient_gap:
-                print(f"⚠️ Insufficient gap between AMAs: {ama_gap_percent:.2f}% (minimum: {min_gap_percent:.2f}%)")
-            if not price_confirms_trend:
-                print(f"⚠️ Price ({latest['close']:.5f}) above AMA50 ({latest['ma_medium']:.5f}) - trend not confirmed")
+            print(f"⚠️ SELL conditions not met")
     
     # Check VWMA alignment with AMA
     vwma_confirms = False
