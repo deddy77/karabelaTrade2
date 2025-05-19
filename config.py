@@ -167,9 +167,11 @@ MIN_BB_BANDWIDTH = 0.5
 # =================================
 # Risk Management and Position Sizing
 # =================================
-DEFAULT_RISK_PERCENT = 1.0
-MIN_LOT = 0.04
-MAX_LOT = 10.0
+DEFAULT_RISK_PERCENT = 1.0     # Risk per trade (1% of account)
+MIN_LOT = 0.01                # Minimum lot size
+MAX_LOT = 10.0               # Maximum lot size for 1:30 leverage compliance
+MAX_LEVERAGE_PER_TRADE = 30   # Maximum leverage per trade (1:30)
+SCALE_IN_PERIOD = True       # Scale in during evaluation period
 
 # =================================
 # Stop Loss and Take Profit Settings
@@ -253,10 +255,23 @@ USE_DYNAMIC_TP = False
 DYNAMIC_TP_ATR_MULTIPLIER = 3.0
 CHECK_EXIT_INTERVAL = 60
 
-# Daily Trading Limits
-DAILY_PROFIT_TARGET = 50  # Stop when $50 profit made
-DAILY_MAX_LOSS = -30     # Stop if $30 loss reached
-RESET_TIME = "00:00"     # Daily reset time
+# Challenge Parameters ($5000 Account)
+ACCOUNT_SIZE = 5000          # Initial account size
+DAILY_PROFIT_TARGET = 500    # 10% target ($500)
+DAILY_MAX_LOSS = -200       # 4% daily loss limit ($200)
+MAX_TOTAL_LOSS = -300       # 6% max drawdown ($300)
+RESET_TIME = "00:00"        # Daily reset time
+
+# Challenge Requirements
+EVALUATION_MIN_DAYS = 3      # Minimum trading days required
+PAYOUT_CYCLE_DAYS = 14      # Days between payouts
+LEVERAGE_LIMIT = 30         # Maximum leverage 1:30
+
+# Signal Validity Settings
+MAX_SIGNAL_VALIDITY_SECONDS = 30  # Maximum time a signal remains valid
+MAX_PRICE_DEVIATION_PIPS = 10     # Maximum allowed price deviation before execution
+SIGNAL_RECHECK_REQUIRED = True    # Require signal revalidation before execution
+EXECUTION_RETRY_DELAY = 1         # Seconds to wait between execution attempts
 
 # Common Settings
 MAGIC_NUMBER = 123456

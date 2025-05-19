@@ -62,7 +62,8 @@ from config import (SYMBOL, TIMEFRAME, MA_MEDIUM, MA_LONG, ATR_PERIOD, MAX_ATR_M
                   USE_ADX_FILTER, ADX_PERIOD, ADX_THRESHOLD, ADX_EXTREME,
                   USE_MACD_FILTER, MACD_FAST, MACD_SLOW, MACD_SIGNAL,
                   MACD_CONSECUTIVE_BARS, MACD_GROWING_FACTOR, MACD_ZERO_CROSS_CONFIRM,
-                  USE_BB_FILTER, BB_PERIOD, BB_STD_DEV, BB_EXTENSION_THRESHOLD, MIN_BB_BANDWIDTH)
+                  USE_BB_FILTER, BB_PERIOD, BB_STD_DEV, BB_EXTENSION_THRESHOLD, MIN_BB_BANDWIDTH,
+                  MAX_PRICE_DEVIATION_PIPS)
 from mt5_helper import (get_historical_data, open_buy_order, open_sell_order, close_all_positions, has_buy_position, has_sell_position)
 from risk_manager import determine_lot
 
@@ -1377,8 +1378,36 @@ def prepare_timeframe_data(symbol, tf):
         
     return df.dropna()
 
+def validate_signal_conditions(df, latest, signal_type):
+    """Validate signal conditions just before execution"""
+    if len(df) < 2:
+        return False, "Not enough data for validation"
+        
+    # Verify AMA alignment
+    price = latest['close']
+    ama50 = latest['ma_medium']
+    ama200 = latest['ma_long']
+    
+    # Calculate gap percentage
+    ama_gap_percent = abs(ama50 - ama200) / ama200 * 100
+    sufficient_gap = ama_gap_percent >= MIN_AMA_GAP_PERCENT
+    
+    if not sufficient_gap:
+        return False, f"Insufficient AMA gap: {ama_gap_percent:.2f}% < {MIN_AMA_GAP_PERCENT}%"
+    
+    if signal_type == 'BUY':
+        # For BUY: AMA50 > AMA200 AND Price > AMA50
+        if not (ama50 > ama200 and price > ama50):
+            return False, "AMA conditions not met for BUY signal"
+    else:  # SELL
+        # For SELL: AMA50 < AMA200 AND Price < AMA50
+        if not (ama50 < ama200 and price < ama50):
+            return False, "AMA conditions not met for SELL signal"
+            
+    return True, "Signal conditions valid"
+
 def analyze_multiple_timeframes_weighted(symbol, timeframes=ANALYSIS_TIMEFRAMES, weights=MTF_WEIGHTS):
-    """Analyze M5 timeframe for AMA50/AMA200 crossover signals"""
+    """Analyze timeframe for AMA50/AMA200 crossover signals with enhanced validation"""
     signals = initialize_signals()
     
     print(f"\n=== {TIMEFRAME} AMA Analysis for {symbol} ===")
@@ -1738,8 +1767,37 @@ def prepare_market_data(symbol):
         
     return df
 
+def validate_execution_conditions(symbol, analysis_price, signal_type, timeframe):
+    """
+    Validate conditions just before trade execution
+    Returns: (bool, str) - (is_valid, message)
+    """
+    # Get fresh tick data
+    tick = mt5.symbol_info_tick(symbol)
+    if not tick:
+        return False, "Failed to get current price"
+        
+    current_price = tick.ask if signal_type == 'BUY' else tick.bid
+    
+    # Calculate price deviation in pips
+    pip_value = 0.0001 if not symbol.endswith('JPY') else 0.01
+    price_deviation_pips = abs(current_price - analysis_price) / pip_value
+    
+    if price_deviation_pips > MAX_PRICE_DEVIATION_PIPS:
+        return False, f"Price deviation too large: {price_deviation_pips:.1f} pips"
+    
+    # Get fresh data for signal validation
+    df = prepare_market_data(symbol)
+    if df is None or len(df) < 2:
+        return False, "Failed to get fresh market data"
+    
+    latest = df.iloc[-1]
+    is_valid, message = validate_signal_conditions(df, latest, signal_type)
+    
+    return is_valid, message
+
 def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
-    """Check for signals and execute trades based on M5 AMA crossovers"""
+    """Check for signals and execute trades based on AMA crossovers with enhanced validation"""
     from main import pm
     from mt5_helper import check_market_conditions
     
@@ -2153,6 +2211,15 @@ def check_signal_and_trade(symbol=SYMBOL, risk_percent=1.0):
             final_lot_size = base_lot_size * volume_multiplier
             
             if market_open:
+                # Pre-execution validation
+                analysis_price = latest['close']
+                is_valid, message = validate_execution_conditions(symbol, analysis_price, signal, TIMEFRAME)
+                
+                if not is_valid:
+                    print(f"❌ Trade execution aborted: {message}")
+                    write_diagnostic_log(symbol, f"Trade aborted: {message}")
+                    return
+                    
                 print(f"\nPosition Sizing:")
                 print(f"Base lot size: {base_lot_size:.2f}")
                 print(f"Volume multiplier: {volume_multiplier:.2f}")

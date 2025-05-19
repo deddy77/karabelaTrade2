@@ -488,9 +488,9 @@ def open_buy_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pip
                 
                 # Check if the position was actually opened, regardless of the return code
                 if has_buy_position(symbol):
-                    print(f"✅ BUY order executed for {symbol} at {price} (SL: {stop_loss}, TP: {take_profit})")
-                    log_trade(f"OPENED BUY: {lot} lot(s) of {symbol} at {price}")
-                    send_discord_notification(f"🟢 BUY SIGNAL: {symbol} - {lot} lot(s) at {price}")
+                    print(f"✅ BUY order executed for {symbol} at {price} ({TIMEFRAME}) (SL: {stop_loss}, TP: {take_profit})")
+                    log_trade(f"OPENED BUY: {lot} lot(s) of {symbol} at {price} ({TIMEFRAME})")
+                    send_discord_notification(f"🟢 BUY SIGNAL: {symbol} ({TIMEFRAME}) - {lot} lot(s) at {price}")
                     return True
                 else:
                     # Only retry if we don't have a position and the return code indicated failure
@@ -670,9 +670,9 @@ def open_sell_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pi
                 
                 # Check if the position was actually opened, regardless of the return code
                 if has_sell_position(symbol):
-                    print(f"✅ SELL order executed for {symbol} at {price} (SL: {stop_loss}, TP: {take_profit})")
-                    log_trade(f"OPENED SELL: {lot} lot(s) of {symbol} at {price}")
-                    send_discord_notification(f"🔴 SELL SIGNAL: {symbol} - {lot} lot(s) at {price}")
+                    print(f"✅ SELL order executed for {symbol} at {price} ({TIMEFRAME}) (SL: {stop_loss}, TP: {take_profit})")
+                    log_trade(f"OPENED SELL: {lot} lot(s) of {symbol} at {price} ({TIMEFRAME})")
+                    send_discord_notification(f"🔴 SELL SIGNAL: {symbol} ({TIMEFRAME}) - {lot} lot(s) at {price}")
                     return True
                 else:
                     # Only retry if we don't have a position and the return code indicated failure
