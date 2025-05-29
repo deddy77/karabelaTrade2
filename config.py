@@ -12,19 +12,19 @@ MAX_LOT = 10.0        # Maximum lot size allowed
 LEVERAGE_LIMIT = 30   # Maximum allowed leverage (e.g., 30:1)
 
 # Trading Limits
-DAILY_PROFIT_TARGET = 500.0  # Daily profit target in account currency
-DAILY_MAX_LOSS = -250.0      # Maximum daily loss allowed
-MAX_TOTAL_LOSS = -5.0        # Maximum total drawdown percentage allowed
+DAILY_PROFIT_TARGET = 500.0  # Daily profit target: 10% of $5,000
+DAILY_MAX_LOSS = -200.0      # Maximum daily loss: 4% of $5,000
+MAX_TOTAL_LOSS = -6.0        # Maximum total drawdown percentage: 6%
 
 # Account Settings
-ACCOUNT_SIZE = 100000.0      # Initial account size
+ACCOUNT_SIZE = 5000.0        # Blueberry Funded account size
 RISK_PER_TRADE = 1.0         # Risk percentage per trade (1.0 = 1%)
 DEFAULT_RISK_PERCENT = 1.0    # Default risk if not specified
 MAX_SPREAD = 20              # Maximum allowed spread in points
 
 # Evaluation Settings
-EVALUATION_MIN_DAYS = 30     # Minimum trading days for evaluation
-PAYOUT_CYCLE_DAYS = 30       # Days between payouts
+EVALUATION_MIN_DAYS = 3      # Blueberry minimum trading days for evaluation
+PAYOUT_CYCLE_DAYS = 14       # Blueberry payout frequency
 
 # File Paths
 LOG_FILE = "logs/trades.log"
