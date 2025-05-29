@@ -88,12 +88,10 @@ def run_strategy():
                 ma20 < ma50 and 
                 rsi > 30 and 
                 trend_data['trend'] == 'Downtrend'
-            )
-            
-            # Execute trades
+            )            # Execute trades
             if buy_signal and not has_buy:
                 print(f"🟢 BUY SIGNAL: Opening long position - Lot: {lot_size}")
-                success = open_buy_order(SYMBOL, lot_size)
+                success = open_buy_order(SYMBOL, lot_size, stop_loss_pips, 5)  # 5 pips = 50 points TP
                 if success:
                     print(f"✅ Buy order placed successfully")
                 else:
@@ -101,7 +99,7 @@ def run_strategy():
                     
             elif sell_signal and not has_sell:
                 print(f"🔴 SELL SIGNAL: Opening short position - Lot: {lot_size}")
-                success = open_sell_order(SYMBOL, lot_size)
+                success = open_sell_order(SYMBOL, lot_size, stop_loss_pips, 5)  # 5 pips = 50 points TP
                 if success:
                     print(f"✅ Sell order placed successfully")
                 else:
