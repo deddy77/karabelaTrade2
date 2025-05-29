@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  tradingbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: karabelatrade/kbt2:latest
+    container_name: kbt2_bot
+    restart: unless-stopped
+    environment:
+      - TZ=America/New_York
+      - DISPLAY=${DISPLAY}
+      - MT5_LOGIN=${MT5_LOGIN:-}
+      - MT5_PASSWORD=${MT5_PASSWORD:-}
+      - MT5_SERVER=${MT5_SERVER:-}
+      - PYTHONPATH=/app
+    volumes:
+      - ./config.py:/app/config.py:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - /tmp/.X11-unix:/tmp/.X11-unix  # For GUI support on Linux
+    ports:
+      - "8080:8080"  # For future web interface
+    healthcheck:
+      test: ["CMD", "python", "-c", "import MetaTrader5 as mt5; exit(0 if mt5.initialize() else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # Future services can be added here
+  # webui:
+  #   build:
+  #     context: ./webui
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "80:80"
+  #   depends_on:
+  #     - tradingbot
+
+  # monitoring:
+  #   image: grafana/grafana:latest
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - ./monitoring/grafana:/var/lib/grafana
+  #   depends_on:
+  #     - tradingbot
+
+networks:
+  default:
+    name: kbt2_network
+    driver: bridge
+
+volumes:
+  data:
+    name: kbt2_data
+  logs:
+    name: kbt2_logs
+
+# Example .env file contents:
+#   MT5_LOGIN=your_login
+#   MT5_PASSWORD=your_password
+#   MT5_SERVER=your_server
+#   DISPLAY=:0  # For Linux GUI support

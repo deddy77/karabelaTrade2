@@ -1,69 +1,155 @@
-# Building KarabelaTrade Installer
+# Building KarabelaTrade Bot
 
-This document explains how to build the KarabelaTrade installer.
+## Development Installation
 
-## Prerequisites
+### Windows
+1. Clone the repository
+2. Run `build_package.bat`
+   - Creates virtual environment
+   - Installs dependencies
+   - Builds package
+   - Installs in development mode
+   - Runs environment tests
 
-1. Python 3.11 or higher
-2. Inno Setup 6.x installed
-3. All requirements from requirements.txt installed
-
-## Build Process
-
-There are two ways to build the installer:
-
-### Method 1: Using the automated build script (Recommended)
-
-1. Open PowerShell as Administrator
-2. Navigate to the project directory:
-   ```powershell
-   cd path/to/KBT2
+### Linux/Mac
+1. Clone the repository
+2. Make script executable:
+   ```bash
+   chmod +x build_package.sh
    ```
 3. Run the build script:
-   ```powershell
-   .\build_steps.ps1
-   ```
-4. The script will:
-   - Create the executable using PyInstaller
-   - Create the installer using Inno Setup
-   - Show progress and results of each step
-
-The final installer will be created at `installer/KarabelaTrade_Setup.exe`
-
-### Method 2: Manual build process
-
-If the automated script fails, you can try the manual process:
-
-1. Create the executable:
-   ```powershell
-   python build_executable.py
-   ```
-2. Wait for the executable to be created in the `dist` folder
-3. Create the installer:
-   ```powershell
-   & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "installer_script.iss"
+   ```bash
+   ./build_package.sh
    ```
 
-## Troubleshooting
+## Manual Installation Steps
 
-1. If you get PyInstaller errors:
-   - Make sure all dependencies are installed: `pip install -r requirements.txt`
-   - Try running PyInstaller without administrator privileges
+1. Create virtual environment:
+   ```bash
+   python -m venv venv
+   ```
 
-2. If you get Inno Setup errors:
-   - Make sure the executable was created in the `dist` folder
-   - Check if Inno Setup is properly installed
+2. Activate virtual environment:
+   - Windows: `venv\Scripts\activate`
+   - Linux/Mac: `source venv/bin/activate`
 
-3. Network Issues:
-   - Ensure you have a stable internet connection for downloading dependencies
-   - If connection fails, try running the build process again
+3. Install build tools:
+   ```bash
+   python -m pip install --upgrade pip
+   pip install wheel build twine
+   ```
 
-## Installation
+4. Build package:
+   ```bash
+   python -m build
+   ```
 
-After building, you can find the installer at `installer/KarabelaTrade_Setup.exe`. Run it to install the application.
+5. Install in development mode:
+   ```bash
+   pip install -e .
+   ```
 
-The installer will:
-- Install the application to the Program Files directory
-- Create desktop and start menu shortcuts
-- Add necessary registry entries
-- Copy MQL5 files to the appropriate location
+## Running Tests
+After installation:
+```bash
+python test_environment.py
+```
+
+## Command Line Tools
+The installation provides these commands:
+- `karabelatrade` - Launch the trading bot
+- `kbt-test` - Run environment tests
+- `kbt-version` - Show version information
+
+## Creating Distribution Packages
+
+### Source Distribution
+```bash
+python -m build --sdist
+```
+
+### Wheel Distribution
+```bash
+python -m build --wheel
+```
+
+### Both Source and Wheel
+```bash
+python -m build
+```
+
+## Directory Structure
+```
+KBT2/
+├── data/              # Data storage
+├── logs/              # Log files
+│   ├── trades/       # Trade logs
+│   ├── analysis/     # Analysis logs
+│   └── diagnostics/  # System diagnostics
+├── tests/            # Test files
+└── karabelatrade/    # Main package
+```
+
+## Package Contents
+- GUI application
+- Technical analysis tools
+- Session management
+- Risk management
+- MT5 integration
+- Discord notifications
+
+## Development Guidelines
+
+### Code Style
+- Follow PEP 8
+- Use type hints
+- Include docstrings
+- Write unit tests
+
+### Git Workflow
+1. Create feature branch
+2. Make changes
+3. Run tests
+4. Submit pull request
+
+### Version Control
+Version numbers follow semantic versioning:
+- MAJOR version for incompatible API changes
+- MINOR version for new features
+- PATCH version for bug fixes
+
+## Common Issues
+
+### Installation Problems
+1. Python version mismatch:
+   - Ensure Python 3.8 or higher
+   - Check `python --version`
+
+2. Missing dependencies:
+   - Run `pip install -r requirements.txt`
+   - Check error messages for specific packages
+
+3. MT5 connection issues:
+   - Verify MetaTrader 5 is installed
+   - Check MT5 terminal is running
+   - Enable AutoTrading
+
+### Build Issues
+1. Virtual environment problems:
+   - Delete venv directory
+   - Create new environment
+   - Reinstall dependencies
+
+2. Permission errors:
+   - Run as administrator (Windows)
+   - Use sudo (Linux)
+
+3. Path issues:
+   - Ensure correct working directory
+   - Check PATH environment variable
+
+## Support
+For issues:
+1. Check error logs
+2. Review documentation
+3. Submit detailed bug report

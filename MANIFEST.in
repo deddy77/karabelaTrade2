@@ -1,0 +1,31 @@
+# Documentation
+include LICENSE
+include README.md
+include QUICKSTART.md
+include VERSION.md
+include BUILD.md
+
+# Configuration
+include requirements.txt
+include py.typed
+include config_example.py
+
+# Installation and build scripts
+include install.bat
+include install.sh
+include build_package.bat
+include build_package.sh
+
+# Project structure
+recursive-include KBT2 *.py
+recursive-include KBT2/logs *.log
+recursive-include KBT2/data *.json
+
+# Exclude development files
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude *.pyo
+global-exclude .git*
+global-exclude .env
+global-exclude venv/*
+global-exclude *.egg-info/*

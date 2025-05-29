@@ -1,5 +1,6 @@
 # profit_manager.py
 from datetime import datetime, time
+import MetaTrader5 as mt5
 from config import (
     DAILY_PROFIT_TARGET, DAILY_MAX_LOSS, MAX_TOTAL_LOSS,
     EVALUATION_MIN_DAYS, ACCOUNT_SIZE, PAYOUT_CYCLE_DAYS
@@ -82,5 +83,18 @@ class ProfitManager:
     def get_profit(self):
         return self.profit
 
-# Remove this line if present:
-# pm = ProfitManager()  # DELETE THIS LINE
+# Global instance
+_profit_manager = ProfitManager()
+
+def update_positions(symbol):
+    """Update and manage positions profit for the given symbol"""
+    global _profit_manager
+    account_info = mt5.account_info()
+    if account_info:
+        _profit_manager.update(account_info.balance)
+    return _profit_manager.get_profit()
+
+def get_profit_manager():
+    """Get the global profit manager instance"""
+    global _profit_manager
+    return _profit_manager

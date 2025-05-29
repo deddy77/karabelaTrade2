@@ -1,242 +1,184 @@
-# Advanced Forex Trading Bot
+# KarabelaTrade Bot
 
-[![Python Support](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
-[![MetaTrader5](https://img.shields.io/badge/MetaTrader-5-blue.svg)](https://www.metatrader5.com/)
-[![Code Coverage](https://img.shields.io/badge/coverage-85%25-brightgreen.svg)](TESTING.md)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
+A multi-pair trading bot with advanced analysis and visualization capabilities.
 
-A sophisticated forex trading bot featuring adaptive moving average strategy, dynamic risk management, session-based trading, and comprehensive backtesting capabilities.
+## Features
 
-## Core Features
-
-### Advanced Trading Strategy
-- **Adaptive Moving Average (AMA) System**
-  - AMA50/AMA200 crossover strategy with dynamic gap validation
-  - Multiple timeframe analysis with weighted signals
-  - Volume-Weighted Moving Average (VWMA) confirmation
-  - Price action pattern recognition
-
-### Comprehensive Risk Management
-- **Dynamic Position Sizing**
-  - Account balance-based calculations
-  - Market volatility adjustments
-  - Session-specific risk scaling
-  - Leverage compliance monitoring
-
-- **Profit Management**
-  - Daily profit targets and drawdown limits
-  - Evaluation period tracking
-  - Account balance monitoring
-  - Dynamic risk adjustment based on performance
-
-### Market Analysis
-- **Technical Indicators**
-  - ADX for trend strength validation
-  - MACD momentum confirmation
-  - RSI overbought/oversold filter
-  - Bollinger Bands volatility analysis
-
-- **Pattern Recognition**
-  - Dynamic support/resistance levels
-  - Harmonic pattern detection
-  - Candlestick pattern analysis
-  - Breakout validation with volume confirmation
-
-### Session Management
-- **Intelligent Scheduling**
-  - Automatic session detection
-  - Pair selection based on active sessions
-  - Risk adjustment during session overlaps
-  - High-impact news avoidance
-
-## System Architecture
-
-```mermaid
-graph TD
-    A[Main Trading System] --> B[Strategy Module]
-    A --> C[Risk Management]
-    A --> D[Session Management]
-    A --> E[MT5 Integration]
-    B --> F[Signal Generation]
-    B --> G[Pattern Recognition]
-    C --> H[Position Sizing]
-    C --> I[Profit Tracking]
-    D --> J[Session Detection]
-    D --> K[Pair Selection]
-    E --> L[Trade Execution]
-    E --> M[Error Handling]
-```
+- Multi-pair trading with session-based management
+- Real-time technical analysis
+- Price charts with indicators
+- Position tracking and risk management
+- Discord notifications
+- Session-aware trading windows
+- Market diagnostics and health monitoring
 
 ## Installation
 
-### Prerequisites
-- Python 3.8 or higher
-- MetaTrader 5 platform
-- Active MT5 trading account
+1. Install Python 3.8 or higher
+2. Install MetaTrader 5
+3. Install required packages:
 
-### Quick Setup
 ```bash
-# Clone repository
-git clone https://github.com/yourusername/forex-trading-bot.git
-cd forex-trading-bot
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Configure settings
-cp config.example.py config.py
-# Edit config.py with your settings
-
-# Run tests
-python run_tests.py
 ```
 
-### Cloud Deployment
-For deploying to cloud servers (Azure, AWS, etc.):
+## Setup
+
+1. Configure MetaTrader 5:
+   - Enable automated trading
+   - Allow DLL imports
+   - Configure your account credentials
+
+2. Configure the bot:
+   - Copy `config_example.py` to `config.py`
+   - Update settings in `config.py`:
+     * Trading pairs
+     * Risk parameters
+     * Session times
+     * Discord webhook (optional)
+
+## Running the Bot
+
+### GUI Mode (Recommended)
+
+Start the bot with the graphical interface:
+
 ```bash
-# Package the bot
-./package_bot.sh
-
-# Deploy using provided scripts
-See deployment_guide.txt for detailed instructions
+python run_gui.py
 ```
 
-## Configuration
+The GUI provides:
+- Real-time trading status
+- Session management
+- Position monitoring
+- Technical analysis with charts
+- Risk metrics
+- Trading controls
 
-### Trading Parameters
-```python
-# config.py example
-SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY"]
-TIMEFRAME = "M5"
-DEFAULT_RISK_PERCENT = 1.0
-DAILY_PROFIT_TARGET = 500
-DAILY_MAX_LOSS = -200
-```
+### Chart Features
 
-### Risk Management Settings
-- Set position size limits
-- Configure drawdown thresholds
-- Adjust risk per trade
-- Set daily profit/loss limits
+The bot includes advanced charting capabilities:
+- Candlestick charts
+- Moving averages (20, 50, 200 periods)
+- RSI indicator
+- Volume analysis
+- Support/Resistance levels
+- Session markers
 
-### Session Parameters
-- Define trading sessions
-- Set session-specific risk levels
-- Configure pair selection criteria
-- Adjust for session overlaps
+To view charts:
+1. Select a pair in the Analysis tab
+2. Click "Show Chart"
+3. Use the chart controls to:
+   - Change timeframes
+   - Toggle indicators
+   - Analyze market conditions
 
-## Trading Strategy Details
+### Trading Sessions
 
-### Signal Generation
-1. **Primary Signal**
-   - AMA50/AMA200 crossover analysis
-   - Dynamic gap percentage validation
-   - Price action confirmation
-   - Volume trend analysis
+The bot manages trading based on major forex sessions:
+- Sydney (17:00-02:00 EST)
+- Tokyo (20:00-05:00 EST)
+- London (03:00-12:00 EST)
+- New York (08:00-17:00 EST)
 
-2. **Supporting Filters**
-   - ADX trend strength validation
-   - MACD momentum confirmation
-   - RSI overbought/oversold checks
-   - Volatility analysis using Bollinger Bands
-
-### Risk Controls
-1. **Pre-Trade**
-   - Market condition checks
-   - Spread monitoring
-   - News event avoidance
-   - Session validation
-
-2. **During Trade**
-   - Dynamic stop-loss adjustment
-   - Trailing stop management
-   - Position size scaling
-   - Drawdown monitoring
-
-## Backtesting
-
-### Features
-- Historical data analysis
-- Multiple timeframe testing
-- Parameter optimization
-- Performance analytics
-
-### Usage
-```bash
-python run_backtest.py
-```
-
-See [Backtesting Guide](backtesting_guide.md) for detailed instructions.
-
-## Documentation
-
-### Guides
-- [Testing Guide](TESTING.md)
-- [ADX Filter Guide](adx_filter_guide.md)
-- [Exit Strategy Guide](exit_strategy_guide.md)
-- [Backtesting Guide](backtesting_guide.md)
-- [Deployment Guide](deployment_guide.txt)
-
-### API Documentation
-- [MT5 Helper Documentation](mt5_helper.md)
-- [Strategy Documentation](strategy.md)
-- [Risk Management Documentation](risk_manager.md)
-
-## Monitoring
-
-### Logging
-- Comprehensive trade logging
-- Error tracking
-- Performance metrics
-- System diagnostics
-
-### Discord Integration
-- Real-time trade notifications
-- Error alerts
-- Daily performance summaries
-- System status updates
-
-## Performance Metrics
+Overlap periods are handled automatically for optimal trading conditions.
 
 ### Risk Management
-- Dynamic position sizing based on:
-  - Account balance
-  - Market volatility
-  - Session characteristics
-  - Current drawdown
 
-### Profit Tracking
-- Daily profit/loss monitoring
-- Drawdown calculations
-- Running performance metrics
-- Evaluation period tracking
+Built-in risk management features:
+- Per-trade risk limits
+- Session-based position sizing
+- Dynamic leverage control
+- Drawdown protection
+- Spread monitoring
 
-## Future Enhancements
+## Configuration Options
 
-### Planned Features
-- Machine learning integration
-- Portfolio-level analysis
-- Advanced risk modeling
-- Web-based dashboard
+### Core Settings (config.py)
+```python
+SYMBOL = "EURUSD"  # Default trading symbol
+TIMEFRAME = "M5"   # Default timeframe
+RISK_PER_TRADE = 1.0  # Risk percentage per trade
+MAX_SPREAD = 20    # Maximum allowed spread
+```
 
-### Under Development
-- Neural network pattern recognition
-- Automated parameter optimization
-- Enhanced market analysis tools
-- Extended backtesting capabilities
+### Discord Notifications
 
-## Contributing
+To enable Discord notifications:
+1. Create a webhook in your Discord server
+2. Set `ENABLE_DISCORD_NOTIFICATIONS = True`
+3. Add your webhook URL to `DISCORD_WEBHOOK_URL`
 
+### Trading Sessions
+
+Configure session times in `session_manager.py`:
+```python
+TRADING_SESSIONS = {
+    "SYDNEY": {
+        "start": "17:00",
+        "end": "02:00",
+        "pairs": ["AUDUSD", "NZDUSD", ...]
+    },
+    # Other sessions...
+}
+```
+
+## Monitoring and Analysis
+
+### Real-time Diagnostics
+- Market health monitoring
+- Spread analysis
+- Session status
+- Position tracking
+- Risk metrics
+
+### Technical Analysis
+- Trend identification
+- Support/Resistance levels
+- Volume analysis
+- Volatility measures
+- Multiple timeframe analysis
+
+## Troubleshooting
+
+Common issues and solutions:
+
+1. Connection Issues:
+   ```
+   Error: Failed to connect to MetaTrader 5
+   ```
+   - Verify MT5 is running
+   - Check account credentials
+   - Enable AutoTrading
+
+2. Chart Display Issues:
+   ```
+   Error: Failed to get chart data
+   ```
+   - Install required packages
+   - Check internet connection
+   - Verify symbol availability
+
+## Development
+
+Contributing:
 1. Fork the repository
-2. Create your feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a pull request
+2. Create a feature branch
+3. Add tests for new features
+4. Submit a pull request
+
+### Testing
+
+Run tests with:
+```bash
+python -m unittest tests/
+```
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see LICENSE file for details.
 
 ## Disclaimer
 
-This software is for educational purposes only. Use at your own risk. Past performance does not guarantee future results.
+Trading forex carries significant risk. This bot is for educational purposes only. 
+Always test thoroughly in a demo account first.
