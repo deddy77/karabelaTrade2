@@ -2,6 +2,12 @@
 SYMBOL = "EURUSD"  # Default trading symbol
 TIMEFRAME = "M5"   # Default timeframe
 
+# Moving Average Settings
+MA_MEDIUM = 50     # AMA50
+MA_LONG = 200      # AMA200
+AMA_FAST_EMA = 2   # Fast EMA period for AMA
+AMA_SLOW_EMA = 30  # Slow EMA period for AMA
+
 # MT5 Settings
 MAGIC_NUMBER = 123456  # Unique identifier for this bot's trades
 SLIPPAGE = 20         # Maximum allowed slippage in points
@@ -12,7 +18,7 @@ MAX_LOT = 10.0        # Maximum lot size allowed
 LEVERAGE_LIMIT = 30   # Maximum allowed leverage (e.g., 30:1)
 
 # Trading Limits
-DAILY_PROFIT_TARGET = 500.0  # Daily profit target: 10% of $5,000
+DAILY_PROFIT_TARGET = 150.0  # Daily profit target: 10% of $5,000
 DAILY_MAX_LOSS = -200.0      # Maximum daily loss: 4% of $5,000
 MAX_TOTAL_LOSS = -6.0        # Maximum total drawdown percentage: 6%
 
