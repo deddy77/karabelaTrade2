@@ -12,6 +12,10 @@ from config import SYMBOL, TIMEFRAME, MA_MEDIUM, MA_LONG, AMA_FAST_EMA, AMA_SLOW
 from profit_manager import update_positions
 from risk_manager import calculate_lot_size, determine_lot
 from candlestick_patterns import comprehensive_pattern_analysis
+from enhanced_position_detection import (
+    has_buy_position_any_magic, has_sell_position_any_magic,
+    analyze_position_risk, should_avoid_new_trades
+)
 from discord_notify import (
     send_trend_conflict_notification, send_position_risk_notification,
     send_recommendation_change_notification, send_pattern_detection_notification,
@@ -154,6 +158,30 @@ def run_strategy():
                 final_signal = 'NEUTRAL'
 
             print(f"\n🎯 Final Trading Signal: {final_signal}")
+
+            # Enhanced Position Detection - Check ALL positions regardless of magic number
+            has_buy_any_magic = has_buy_position_any_magic(SYMBOL)
+            has_sell_any_magic = has_sell_position_any_magic(SYMBOL)
+
+            # Analyze position risk based on current trend
+            long_term_trend = pattern_analysis['trend_analysis']['long_term_trend']
+            position_risk_analysis = analyze_position_risk(SYMBOL, long_term_trend)
+
+            # Check if we should avoid new trades due to conflicting positions
+            should_avoid, avoid_reason = should_avoid_new_trades(SYMBOL, final_signal, long_term_trend)
+
+            print(f"\n🔍 Enhanced Position Analysis:")
+            print(f"Positions (Any Magic): BUY={has_buy_any_magic}, SELL={has_sell_any_magic}")
+            print(f"Position Risk Detected: {position_risk_analysis['has_risk']}")
+            if position_risk_analysis['has_risk']:
+                print(f"⚠️ Position Risk Warnings:")
+                for rec in position_risk_analysis['recommendations']:
+                    print(f"   {rec}")
+
+            if should_avoid:
+                print(f"⚠️ TRADE AVOIDED: {avoid_reason}")
+                print(f"   Recommendation: Consider manual review of existing positions")
+                final_signal = 'NEUTRAL'  # Override signal to avoid conflicting trades
 
             # Calculate position size
             try:
@@ -317,6 +345,30 @@ def check_signal_and_trade(symbol=SYMBOL):
             final_signal = 'NEUTRAL'
 
         print(f"🎯 Final Trading Signal: {final_signal}")
+
+        # Enhanced Position Detection - Check ALL positions regardless of magic number
+        has_buy_any_magic = has_buy_position_any_magic(symbol)
+        has_sell_any_magic = has_sell_position_any_magic(symbol)
+
+        # Analyze position risk based on current trend
+        long_term_trend = pattern_analysis['trend_analysis']['long_term_trend']
+        position_risk_analysis = analyze_position_risk(symbol, long_term_trend)
+
+        # Check if we should avoid new trades due to conflicting positions
+        should_avoid, avoid_reason = should_avoid_new_trades(symbol, final_signal, long_term_trend)
+
+        print(f"\n🔍 Enhanced Position Analysis:")
+        print(f"Positions (Any Magic): BUY={has_buy_any_magic}, SELL={has_sell_any_magic}")
+        print(f"Position Risk Detected: {position_risk_analysis['has_risk']}")
+        if position_risk_analysis['has_risk']:
+            print(f"⚠️ Position Risk Warnings:")
+            for rec in position_risk_analysis['recommendations']:
+                print(f"   {rec}")
+
+        if should_avoid:
+            print(f"⚠️ TRADE AVOIDED: {avoid_reason}")
+            print(f"   Recommendation: Consider manual review of existing positions")
+            final_signal = 'NEUTRAL'  # Override signal to avoid conflicting trades
 
         # Calculate position size
         try:
