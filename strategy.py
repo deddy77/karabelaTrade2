@@ -197,10 +197,38 @@ def run_strategy():
                 print(f"⚠️ Position Risk Warnings:")
                 for rec in position_risk_analysis['recommendations']:
                     print(f"   {rec}")
+                # Send notifications for detected position risk
+                position_type = "LONG" if has_buy_any_magic else "SHORT"
+                send_discord_position_risk(
+                    SYMBOL,
+                    position_type,
+                    f"POSITION AT RISK: {position_risk_analysis['recommendations'][0]}",
+                    "HIGH"
+                )
+                send_telegram_position_risk(
+                    SYMBOL,
+                    position_type,
+                    f"POSITION AT RISK: {position_risk_analysis['recommendations'][0]}",
+                    "HIGH"
+                )
 
             if should_avoid:
                 print(f"⚠️ TRADE AVOIDED: {avoid_reason}")
                 print(f"   Recommendation: Consider manual review of existing positions")
+                # Send notifications for trade avoidance
+                position_type = "LONG" if has_buy_any_magic else "SHORT"
+                send_discord_position_risk(
+                    SYMBOL,
+                    position_type,
+                    f"TRADE AVOIDED: {avoid_reason}",
+                    "HIGH"
+                )
+                send_telegram_position_risk(
+                    SYMBOL,
+                    position_type,
+                    f"TRADE AVOIDED: {avoid_reason}",
+                    "HIGH"
+                )
                 final_signal = 'NEUTRAL'  # Override signal to avoid conflicting trades
 
             # Calculate position size
@@ -212,12 +240,13 @@ def run_strategy():
                 from config import MIN_LOT
                 lot_size = MIN_LOT
                 stop_loss_pips = 20
-              # Trading Logic: Enhanced AMA Strategy with Pattern Analysis
-            has_buy = has_buy_position(SYMBOL)
-            has_sell = has_sell_position(SYMBOL)
+            # Trading Logic: Enhanced AMA Strategy with Pattern Analysis
+            # Use enhanced position detection that includes manual positions
+            has_buy_any_magic = has_buy_position_any_magic(SYMBOL)
+            has_sell_any_magic = has_sell_position_any_magic(SYMBOL)
 
-            # Execute trades based on comprehensive analysis
-            if final_signal == 'BUY' and not has_buy:
+            # Execute trades based on comprehensive analysis - prevent duplicates with manual positions
+            if final_signal == 'BUY' and not has_buy_any_magic:
                 print(f"🟢 BUY SIGNAL: Opening long position - Lot: {lot_size}")
                 print(f"   Reason: {recommendation} with {confidence} confidence")
                 success = open_buy_order(SYMBOL, lot_size, stop_loss_pips, 20)  # 20 pips TP
@@ -228,7 +257,7 @@ def run_strategy():
                 else:
                     print(f"❌ Failed to place buy order")
 
-            elif final_signal == 'SELL' and not has_sell:
+            elif final_signal == 'SELL' and not has_sell_any_magic:
                 print(f"🔴 SELL SIGNAL: Opening short position - Lot: {lot_size}")
                 print(f"   Reason: {recommendation} with {confidence} confidence")
                 success = open_sell_order(SYMBOL, lot_size, stop_loss_pips, 5)  # 5 pips TP
@@ -239,21 +268,21 @@ def run_strategy():
                 else:
                     print(f"❌ Failed to place sell order")
 
-            # Close opposing positions if strong signal reverses
-            if final_signal == 'BUY' and has_sell and confidence == 'HIGH':
+            # Close opposing positions if strong signal reverses - consider all positions
+            if final_signal == 'BUY' and has_sell_any_magic and confidence == 'HIGH':
                 print(f"🔄 Closing sell positions due to strong buy signal")
                 close_all_positions(SYMBOL)
-            elif final_signal == 'SELL' and has_buy and confidence == 'HIGH':
+            elif final_signal == 'SELL' and has_buy_any_magic and confidence == 'HIGH':
                 print(f"🔄 Closing buy positions due to strong sell signal")
                 close_all_positions(SYMBOL)
 
-            # If we have a position but signals suggest waiting, inform user
-            if (has_buy or has_sell) and recommendation in ['WAIT_FOR_PULLBACK_END', 'WAIT_FOR_BOUNCE_END']:
+            # If we have a position but signals suggest waiting, inform user - consider all positions
+            if (has_buy_any_magic or has_sell_any_magic) and recommendation in ['WAIT_FOR_PULLBACK_END', 'WAIT_FOR_BOUNCE_END']:
                 print(f"⚠️ Warning: Existing position may be at risk")
                 print(f"   Current trend momentum is against the position")
                 print(f"   Consider manual review or tighter stop losses")
                 # Send notifications for position risk
-                position_type = "LONG" if has_buy else "SHORT"
+                position_type = "LONG" if has_buy_any_magic else "SHORT"
                 send_discord_position_risk(
                     SYMBOL,
                     position_type,
@@ -267,10 +296,10 @@ def run_strategy():
                     confidence
                 )
 
-            # Log current status
-            if has_buy or has_sell:
-                position_type = "Long" if has_buy else "Short"
-                print(f"📈 Current Position: {position_type}")
+            # Log current status - include all positions in status
+            if has_buy_any_magic or has_sell_any_magic:
+                position_type = "Long" if has_buy_any_magic else "Short"
+                print(f"📈 Current Position: {position_type} (includes manual positions)")
             else:
                 print(f"⏸️ No open positions")
 
@@ -394,10 +423,38 @@ def check_signal_and_trade(symbol=SYMBOL):
             print(f"⚠️ Position Risk Warnings:")
             for rec in position_risk_analysis['recommendations']:
                 print(f"   {rec}")
+            # Send notifications for detected position risk
+            position_type = "LONG" if has_buy_any_magic else "SHORT"
+            send_discord_position_risk(
+                symbol,
+                position_type,
+                f"POSITION AT RISK: {position_risk_analysis['recommendations'][0]}",
+                "HIGH"
+            )
+            send_telegram_position_risk(
+                symbol,
+                position_type,
+                f"POSITION AT RISK: {position_risk_analysis['recommendations'][0]}",
+                "HIGH"
+            )
 
         if should_avoid:
             print(f"⚠️ TRADE AVOIDED: {avoid_reason}")
             print(f"   Recommendation: Consider manual review of existing positions")
+            # Send notifications for trade avoidance
+            position_type = "LONG" if has_buy_any_magic else "SHORT"
+            send_discord_position_risk(
+                symbol,
+                position_type,
+                f"TRADE AVOIDED: {avoid_reason}",
+                "HIGH"
+            )
+            send_telegram_position_risk(
+                symbol,
+                position_type,
+                f"TRADE AVOIDED: {avoid_reason}",
+                "HIGH"
+            )
             final_signal = 'NEUTRAL'  # Override signal to avoid conflicting trades
 
         # Calculate position size
@@ -411,11 +468,12 @@ def check_signal_and_trade(symbol=SYMBOL):
             stop_loss_pips = 20
 
         # Trading Logic: Enhanced AMA Strategy with Pattern Analysis
-        has_buy = has_buy_position(symbol)
-        has_sell = has_sell_position(symbol)
+        # Use enhanced position detection that includes manual positions
+        has_buy_any_magic = has_buy_position_any_magic(symbol)
+        has_sell_any_magic = has_sell_position_any_magic(symbol)
 
-        # Execute trades based on comprehensive analysis
-        if final_signal == 'BUY' and not has_buy:
+        # Execute trades based on comprehensive analysis - prevent duplicates with manual positions
+        if final_signal == 'BUY' and not has_buy_any_magic:
             print(f"🟢 BUY SIGNAL: Opening long position - Lot: {lot_size}")
             print(f"   Reason: {recommendation} with {confidence} confidence")
             success = open_buy_order(symbol, lot_size, stop_loss_pips, 20)  # 20 pips TP
@@ -426,7 +484,7 @@ def check_signal_and_trade(symbol=SYMBOL):
             else:
                 print(f"❌ Failed to place buy order")
 
-        elif final_signal == 'SELL' and not has_sell:
+        elif final_signal == 'SELL' and not has_sell_any_magic:
             print(f"🔴 SELL SIGNAL: Opening short position - Lot: {lot_size}")
             print(f"   Reason: {recommendation} with {confidence} confidence")
             success = open_sell_order(symbol, lot_size, stop_loss_pips, 20)  # 20 pips TP
@@ -437,24 +495,24 @@ def check_signal_and_trade(symbol=SYMBOL):
             else:
                 print(f"❌ Failed to place sell order")
 
-        # Close opposing positions if strong signal reverses
-        if final_signal == 'BUY' and has_sell and confidence == 'HIGH':
+        # Close opposing positions if strong signal reverses - consider all positions
+        if final_signal == 'BUY' and has_sell_any_magic and confidence == 'HIGH':
             print(f"🔄 Closing sell positions due to strong buy signal")
             close_all_positions(symbol)
-        elif final_signal == 'SELL' and has_buy and confidence == 'HIGH':
+        elif final_signal == 'SELL' and has_buy_any_magic and confidence == 'HIGH':
             print(f"🔄 Closing buy positions due to strong sell signal")
             close_all_positions(symbol)
 
-        # If we have a position but signals suggest waiting, inform user
-        if (has_buy or has_sell) and recommendation in ['WAIT_FOR_PULLBACK_END', 'WAIT_FOR_BOUNCE_END']:
+        # If we have a position but signals suggest waiting, inform user - consider all positions
+        if (has_buy_any_magic or has_sell_any_magic) and recommendation in ['WAIT_FOR_PULLBACK_END', 'WAIT_FOR_BOUNCE_END']:
             print(f"⚠️ Warning: Existing position may be at risk")
             print(f"   Current trend momentum is against the position")
             print(f"   Consider manual review or tighter stop losses")
 
-        # Log current status
-        if has_buy or has_sell:
-            position_type = "Long" if has_buy else "Short"
-            print(f"📈 Current Position: {position_type}")
+        # Log current status - include all positions in status
+        if has_buy_any_magic or has_sell_any_magic:
+            position_type = "Long" if has_buy_any_magic else "Short"
+            print(f"📈 Current Position: {position_type} (includes manual positions)")
         else:
             print(f"⏸️ No open positions")
 
