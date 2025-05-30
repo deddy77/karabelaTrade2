@@ -39,6 +39,11 @@ LOG_FILE = "logs/trades.log"
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1359973769204203591/pKz6EZE353Q4scGiHYGJPI4nm7vlt8rMjPnWZmW8S1M_9kc7UOIFQv6y0oSEgn4-TQDw"      # Your Discord webhook URL here
 ENABLE_DISCORD_NOTIFICATIONS = True   # Set to True to enable notifications
 
+# Telegram Notifications
+TELEGRAM_BOT_TOKEN = "7697776320:AAGAkarXpsbvrgQ31Sadwy0yEodK-ZaRNzs"
+TELEGRAM_CHAT_ID = "7268593610"
+ENABLE_TELEGRAM_NOTIFICATIONS = True
+
 # Default symbol-specific settings
 SYMBOL_SETTINGS = {
     "EURUSD": {

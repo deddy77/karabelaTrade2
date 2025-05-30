@@ -17,9 +17,17 @@ from enhanced_position_detection import (
     analyze_position_risk, should_avoid_new_trades
 )
 from discord_notify import (
-    send_trend_conflict_notification, send_position_risk_notification,
-    send_recommendation_change_notification, send_pattern_detection_notification,
-    send_enhanced_trade_notification
+    send_trend_conflict_notification as send_discord_trend_conflict,
+    send_position_risk_notification as send_discord_position_risk,
+    send_recommendation_change_notification as send_discord_recommendation_change,
+    send_pattern_detection_notification as send_discord_pattern_detection,
+    send_enhanced_trade_notification as send_discord_trade
+)
+from telegram_notify import (
+    send_trend_conflict_notification as send_telegram_trend_conflict,
+    send_position_risk_notification as send_telegram_position_risk,
+    send_pattern_detection_notification as send_telegram_pattern_detection,
+    send_enhanced_trade_notification as send_telegram_trade
 )
 
 def calculate_ama(df, period, fast_ema=2, slow_ema=30):
@@ -36,11 +44,17 @@ def calculate_ama(df, period, fast_ema=2, slow_ema=30):
 
     ama = pd.Series(index=df.index, dtype='float64')
 
-    start_index = period + 50
-    ama.iloc[start_index] = df['close'].iloc[start_index]
+    # Fixed: Start calculation immediately after required period, not period + 50
+    start_index = period
+    if start_index < len(df):
+        ama.iloc[start_index] = df['close'].iloc[start_index]
 
     for i in range(start_index + 1, len(df)):
         ama.iloc[i] = ama.iloc[i-1] + sc.iloc[i] * (df['close'].iloc[i] - ama.iloc[i-1])
+
+    # Debug output for verification
+    if not ama.empty and not pd.isna(ama.iloc[-1]):
+        print(f"🔧 AMA{period} Debug: Latest value = {ama.iloc[-1]:.5f}, Start index = {start_index}, Total bars = {len(df)}")
 
     return ama
 
@@ -61,7 +75,7 @@ def run_strategy():
                     print("Failed to reconnect to MT5")
                     break
               # Get latest market data with more bars for AMA200
-            df = get_historical_data(SYMBOL, TIMEFRAME, bars_count=400)
+            df = get_historical_data(SYMBOL, TIMEFRAME, bars_count=800)
             if df is None:
                 print("Failed to get market data")
                 time.sleep(60)
@@ -148,8 +162,14 @@ def run_strategy():
                 print(f"⚠️ TREND CONFLICT DETECTED - Waiting for resolution")
                 print(f"Long-term: {pattern_analysis['trend_analysis']['long_term_trend']}")
                 print(f"Short-term: {pattern_analysis['trend_analysis']['short_term_momentum']}")
-                # Send Discord notification for trend conflict
-                send_trend_conflict_notification(
+                # Send notifications for trend conflict
+                send_discord_trend_conflict(
+                    SYMBOL,
+                    pattern_analysis['trend_analysis']['long_term_trend'],
+                    pattern_analysis['trend_analysis']['short_term_momentum'],
+                    confidence
+                )
+                send_telegram_trend_conflict(
                     SYMBOL,
                     pattern_analysis['trend_analysis']['long_term_trend'],
                     pattern_analysis['trend_analysis']['short_term_momentum'],
@@ -203,15 +223,19 @@ def run_strategy():
                 success = open_buy_order(SYMBOL, lot_size, stop_loss_pips, 20)  # 20 pips TP
                 if success:
                     print(f"✅ Buy order placed successfully")
+                    send_discord_trade(SYMBOL, "BUY", lot_size, current_price, recommendation, confidence)
+                    send_telegram_trade(SYMBOL, "BUY", lot_size, current_price, recommendation, confidence)
                 else:
                     print(f"❌ Failed to place buy order")
 
             elif final_signal == 'SELL' and not has_sell:
                 print(f"🔴 SELL SIGNAL: Opening short position - Lot: {lot_size}")
                 print(f"   Reason: {recommendation} with {confidence} confidence")
-                success = open_sell_order(SYMBOL, lot_size, stop_loss_pips, 20)  # 20 pips TP
+                success = open_sell_order(SYMBOL, lot_size, stop_loss_pips, 5)  # 5 pips TP
                 if success:
                     print(f"✅ Sell order placed successfully")
+                    send_discord_trade(SYMBOL, "SELL", lot_size, current_price, recommendation, confidence)
+                    send_telegram_trade(SYMBOL, "SELL", lot_size, current_price, recommendation, confidence)
                 else:
                     print(f"❌ Failed to place sell order")
 
@@ -228,9 +252,15 @@ def run_strategy():
                 print(f"⚠️ Warning: Existing position may be at risk")
                 print(f"   Current trend momentum is against the position")
                 print(f"   Consider manual review or tighter stop losses")
-                # Send Discord notification for position risk
+                # Send notifications for position risk
                 position_type = "LONG" if has_buy else "SHORT"
-                send_position_risk_notification(
+                send_discord_position_risk(
+                    SYMBOL,
+                    position_type,
+                    recommendation,
+                    confidence
+                )
+                send_telegram_position_risk(
                     SYMBOL,
                     position_type,
                     recommendation,
@@ -261,7 +291,7 @@ def check_signal_and_trade(symbol=SYMBOL):
     """
     try:
         # Get historical data with enough bars for AMA200
-        df = get_historical_data(symbol, TIMEFRAME, bars_count=400)
+        df = get_historical_data(symbol, TIMEFRAME, bars_count=800)
         if df is None:
             print(f"Failed to get market data for {symbol}")
             return
@@ -391,6 +421,8 @@ def check_signal_and_trade(symbol=SYMBOL):
             success = open_buy_order(symbol, lot_size, stop_loss_pips, 20)  # 20 pips TP
             if success:
                 print(f"✅ Buy order placed successfully")
+                send_discord_trade(symbol, "BUY", lot_size, current_price, recommendation, confidence)
+                send_telegram_trade(symbol, "BUY", lot_size, current_price, recommendation, confidence)
             else:
                 print(f"❌ Failed to place buy order")
 
@@ -400,6 +432,8 @@ def check_signal_and_trade(symbol=SYMBOL):
             success = open_sell_order(symbol, lot_size, stop_loss_pips, 20)  # 20 pips TP
             if success:
                 print(f"✅ Sell order placed successfully")
+                send_discord_trade(symbol, "SELL", lot_size, current_price, recommendation, confidence)
+                send_telegram_trade(symbol, "SELL", lot_size, current_price, recommendation, confidence)
             else:
                 print(f"❌ Failed to place sell order")
 
