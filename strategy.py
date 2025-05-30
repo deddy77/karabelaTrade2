@@ -199,18 +199,40 @@ def run_strategy():
                     print(f"   {rec}")
                 # Send notifications for detected position risk
                 position_type = "LONG" if has_buy_any_magic else "SHORT"
+                risk_message = f"POSITION AT RISK: {position_risk_analysis['recommendations'][0]}"
+
                 send_discord_position_risk(
                     SYMBOL,
                     position_type,
-                    f"POSITION AT RISK: {position_risk_analysis['recommendations'][0]}",
+                    risk_message,
                     "HIGH"
                 )
                 send_telegram_position_risk(
                     SYMBOL,
                     position_type,
-                    f"POSITION AT RISK: {position_risk_analysis['recommendations'][0]}",
+                    risk_message,
                     "HIGH"
                 )
+
+                # Close positions at risk
+                print(f"⚠️ Closing {position_type} position due to risk")
+                print(f"   Reason: {position_risk_analysis['recommendations'][0]}")
+                if close_all_positions(SYMBOL):
+                    print(f"✅ Successfully closed {position_type} position")
+                    send_discord_position_risk(
+                        SYMBOL,
+                        position_type,
+                        f"CLOSED {position_type} POSITION: {risk_message}",
+                        "HIGH"
+                    )
+                    send_telegram_position_risk(
+                        SYMBOL,
+                        position_type,
+                        f"CLOSED {position_type} POSITION: {risk_message}",
+                        "HIGH"
+                    )
+                else:
+                    print(f"❌ Failed to close {position_type} position")
 
             if should_avoid:
                 print(f"⚠️ TRADE AVOIDED: {avoid_reason}")
@@ -425,18 +447,40 @@ def check_signal_and_trade(symbol=SYMBOL):
                 print(f"   {rec}")
             # Send notifications for detected position risk
             position_type = "LONG" if has_buy_any_magic else "SHORT"
+            risk_message = f"POSITION AT RISK: {position_risk_analysis['recommendations'][0]}"
+
             send_discord_position_risk(
                 symbol,
                 position_type,
-                f"POSITION AT RISK: {position_risk_analysis['recommendations'][0]}",
+                risk_message,
                 "HIGH"
             )
             send_telegram_position_risk(
                 symbol,
                 position_type,
-                f"POSITION AT RISK: {position_risk_analysis['recommendations'][0]}",
+                risk_message,
                 "HIGH"
             )
+
+            # Close positions at risk
+            print(f"⚠️ Closing {position_type} position due to risk")
+            print(f"   Reason: {position_risk_analysis['recommendations'][0]}")
+            if close_all_positions(symbol):
+                print(f"✅ Successfully closed {position_type} position")
+                send_discord_position_risk(
+                    symbol,
+                    position_type,
+                    f"CLOSED {position_type} POSITION: {risk_message}",
+                    "HIGH"
+                )
+                send_telegram_position_risk(
+                    symbol,
+                    position_type,
+                    f"CLOSED {position_type} POSITION: {risk_message}",
+                    "HIGH"
+                )
+            else:
+                print(f"❌ Failed to close {position_type} position")
 
         if should_avoid:
             print(f"⚠️ TRADE AVOIDED: {avoid_reason}")

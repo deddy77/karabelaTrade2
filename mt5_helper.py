@@ -8,7 +8,7 @@ from discord_notify import send_discord_notification
 from mt5_connection_manager import MT5ConnectionManager
 from network_error_handler import with_network_error_handling, is_network_error, log_network_error
 from input_validator import (
-    validate_symbol, validate_timeframe, validate_bars_count, 
+    validate_symbol, validate_timeframe, validate_bars_count,
     validate_lot_size, validate_pips, validate_risk_percent,
     validate_price, validate_order_request, validate_and_fix_input,
     safe_float, safe_int
@@ -82,17 +82,17 @@ def connect():
 
         print(f"Connected to MT5 account: {account_info.login} ({account_info.server})")
         print(f"Balance: {account_info.balance}, Equity: {account_info.equity}")
-        
+
         try:
             os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
         except Exception as e:
             print(f"Warning: Could not create log directory: {str(e)}")
-        
+
         success_msg = f"Successfully connected to MT5 account {account_info.login}"
         log_trade(success_msg)
         send_discord_notification(f"✅ {success_msg}")
         return True
-        
+
     except Exception as e:
         error_msg = f"Error connecting to MT5: {str(e)}"
         print(error_msg)
@@ -140,27 +140,27 @@ def get_historical_data(symbol=SYMBOL, timeframe=TIMEFRAME, bars_count=100):
     if not symbol_valid:
         print(f"⚠️ Invalid symbol: {symbol_error}. Using default symbol: {SYMBOL}")
         symbol = SYMBOL
-        
+
     timeframe_valid, timeframe_error = validate_timeframe(timeframe)
     if not timeframe_valid:
         print(f"⚠️ Invalid timeframe: {timeframe_error}. Using default timeframe: {TIMEFRAME}")
         timeframe = TIMEFRAME
-        
+
     bars_count, bars_valid, bars_error = validate_and_fix_input(
-        bars_count, 
+        bars_count,
         lambda x: validate_bars_count(x, min_bars=10, max_bars=5000),
         100
     )
     if not bars_valid:
         print(f"⚠️ Invalid bars count: {bars_error}. Using default: 100")
-    
+
     # Check connection before attempting to get data
     if not check_connection():
         print(f"⚠️ MT5 not connected! Attempting to reconnect before getting data for {symbol}")
         if not connect():
             print(f"❌ Failed to reconnect to MT5. Cannot get historical data for {symbol}")
             return None
-    
+
     # Timeframe fallback hierarchy:
     # 1. First try the explicitly provided timeframe
     # 2. Then fall back to TIMEFRAME from config.py
@@ -168,17 +168,17 @@ def get_historical_data(symbol=SYMBOL, timeframe=TIMEFRAME, bars_count=100):
     mt5_timeframe = TIMEFRAME_MAP.get(timeframe, TIMEFRAME_MAP.get(TIMEFRAME, mt5.TIMEFRAME_M5))
     if mt5_timeframe == mt5.TIMEFRAME_M5 and timeframe != TIMEFRAME:
         print(f"⚠️ Using M5 as fallback timeframe (provided: {timeframe}, config: {TIMEFRAME})")
-    
+
     # Get current time and fetch data relative to now
     current_time = datetime.now()
     rates = mt5.copy_rates_from(symbol, mt5_timeframe, current_time, bars_count)
     if rates is None or len(rates) == 0:
         print(f"Failed to get historical data for {symbol}")
         return None
-    
+
     df = pd.DataFrame(rates)
     df['time'] = pd.to_datetime(df['time'], unit='s')
-    
+
     utc_tz = pytz.timezone('UTC')
     est_tz = pytz.timezone('US/Eastern')
     df['time'] = df['time'].dt.tz_localize(utc_tz).dt.tz_convert(est_tz)
@@ -192,16 +192,16 @@ def check_market_conditions(symbol=SYMBOL):
     if not symbol_valid:
         print(f"⚠️ Invalid symbol: {symbol_error}. Using default symbol: {SYMBOL}")
         symbol = SYMBOL
-        
+
     if not check_connection():
         print("⚠️ MT5 not connected!")
         return False
-    
+
     # Check market hours (Sunday 5PM to Friday 5PM EST)
     now = datetime.now()
     est_tz = pytz.timezone('US/Eastern')
     est_time = est_tz.localize(now)
-    
+
     # Friday after 5PM
     if est_time.weekday() == MARKET_CLOSE_DAY and est_time.hour >= MARKET_OPEN_HOUR:
         print("⚠️ Markets closed (Friday after 5PM EST)")
@@ -214,24 +214,24 @@ def check_market_conditions(symbol=SYMBOL):
     elif est_time.weekday() == MARKET_OPEN_DAY and est_time.hour < MARKET_OPEN_HOUR:
         print("⚠️ Markets closed (Sunday before 5PM EST)")
         return False
-    
+
     symbol_info = mt5.symbol_info(symbol)
     print(f"Current spread for {symbol}: {symbol_info.spread} points")
     if not symbol_info:
         print(f"⚠️ Failed to get {symbol} info")
         return False
-    
+
     # Get symbol-specific spread limit
     max_spread = SYMBOL_SETTINGS[symbol].get("MAX_SPREAD", 20)  # Default to 20 if not specified
-    
+
     if symbol_info.spread > max_spread:
         print(f"⚠️ Spread too wide for {symbol}: {symbol_info.spread} points")
         return False
-    
+
     if not symbol_info.trade_mode == mt5.SYMBOL_TRADE_MODE_FULL:
         print(f"⚠️ Market not open for trading {symbol}")
         return False
-    
+
     return True
 
 def prepare_order_request(symbol, order_type, lot_size, price, sl=None, tp=None):
@@ -244,7 +244,7 @@ def prepare_order_request(symbol, order_type, lot_size, price, sl=None, tp=None)
         if not symbol_info:
             print(f"Failed to get symbol info for {symbol}")
             return None
-            
+
         point = symbol_info.point
         if order_type == mt5.ORDER_TYPE_BUY:
             sl = price - (FIXED_SL_POINTS * point)
@@ -252,12 +252,12 @@ def prepare_order_request(symbol, order_type, lot_size, price, sl=None, tp=None)
         else:  # SELL
             sl = price + (FIXED_SL_POINTS * point)
             tp = price - (FIXED_TP_POINTS * point)
-    
+
     symbol_valid, symbol_error = validate_symbol(symbol)
     if not symbol_valid:
         print(f"⚠️ Invalid symbol: {symbol_error}. Using default symbol: {SYMBOL}")
         symbol = SYMBOL
-    
+
     # Validate lot size and ensure 2 decimal places
     lot_size = round(float(lot_size), 2)  # Round to 2 decimal places first
     lot_size, lot_valid, lot_error = validate_and_fix_input(
@@ -267,7 +267,7 @@ def prepare_order_request(symbol, order_type, lot_size, price, sl=None, tp=None)
     )
     if not lot_valid:
         print(f"⚠️ Invalid lot size: {lot_error}. Using minimum: 0.01")
-    
+
     # Validate price
     price, price_valid, price_error = validate_and_fix_input(
         price,
@@ -277,19 +277,19 @@ def prepare_order_request(symbol, order_type, lot_size, price, sl=None, tp=None)
     if not price_valid:
         print(f"⚠️ Invalid price: {price_error}")
         return None
-    
+
     symbol_info = mt5.symbol_info(symbol)
     if not symbol_info:
         print(f"Failed to get symbol info for {symbol}")
         return None
-        
+
     print(f"Symbol info for {symbol} - Digits: {symbol_info.digits}, Point: {symbol_info.point}")
     print(f"Trade modes - Filling: {symbol_info.filling_mode}, Execution: {symbol_info.trade_mode}")
-    
+
     # Convert SL/TP - keep 0.0 only if no pips were provided
     sl = safe_float(sl, 0.0)
     tp = safe_float(tp, 0.0)
-    
+
     # Validate order type
     valid_order_types = [mt5.ORDER_TYPE_BUY, mt5.ORDER_TYPE_SELL]
     if order_type not in valid_order_types:
@@ -342,11 +342,11 @@ def prepare_order_request(symbol, order_type, lot_size, price, sl=None, tp=None)
         "type_time": mt5.ORDER_TIME_GTC,
         "type_filling": mt5.ORDER_FILLING_IOC,
     }
-    
+
     print(f"Order request details for {symbol}:")
     print(f"Price: {price}, SL: {sl}, TP: {tp}")
     print(f"Volume: {lot_size}, Type: {order_type}")
-    
+
     return request
 
 @with_network_error_handling(max_retries=3, initial_backoff=1, backoff_factor=2)
@@ -357,7 +357,7 @@ def open_buy_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pip
     if not symbol_valid:
         print(f"⚠️ Invalid symbol: {symbol_error}. Using default symbol: {SYMBOL}")
         symbol = SYMBOL
-    
+
     # Validate lot size and ensure 2 decimal places
     if lot is None:
         print("⚠️ No lot size provided! Using minimum 0.01")
@@ -372,7 +372,7 @@ def open_buy_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pip
         )
         if not lot_valid:
             print(f"⚠️ Invalid lot size: {lot_error}. Using minimum: 0.01")
-    
+
     # Validate stop loss pips
     if stop_loss_pips is None:
         print("⚠️ No stop-loss provided! Using 20 pips default")
@@ -385,7 +385,7 @@ def open_buy_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pip
         )
         if not sl_valid:
             print(f"⚠️ Invalid stop loss pips: {sl_error}. Using default: 20")
-    
+
     # Validate take profit pips
     if take_profit_pips is not None:
         take_profit_pips, tp_valid, tp_error = validate_and_fix_input(
@@ -395,7 +395,7 @@ def open_buy_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pip
         )
         if not tp_valid:
             print(f"⚠️ Invalid take profit pips: {tp_error}. Using default: {stop_loss_pips * 2}")
-    
+
     # Validate max retries
     max_retries, retries_valid, retries_error = validate_and_fix_input(
         max_retries,
@@ -404,7 +404,7 @@ def open_buy_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pip
     )
     if not retries_valid:
         print(f"⚠️ Invalid max retries: {retries_error}. Using default: 3")
-    
+
     if not check_market_conditions(symbol):
         print(f"❌ Buy order aborted for {symbol} - bad market conditions")
         return False
@@ -421,12 +421,12 @@ def open_buy_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pip
 
     point = symbol_info.point
     digits = symbol_info.digits
-    
+
     # First check if we already have a buy position - avoid duplicate orders
     if has_buy_position(symbol):
         print(f"✅ BUY position already exists for {symbol}, skipping new order")
         return True
-    
+
     for attempt in range(max_retries):
         try:
             tick = mt5.symbol_info_tick(symbol)
@@ -437,17 +437,17 @@ def open_buy_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pip
 
             price = tick.ask
             pip_value = point * (10 if not symbol.endswith("JPY") else 1)  # Adjust for JPY pairs
-            
+
             # Calculate SL/TP prices - ensure we don't pass 0.0 if pips are provided
             take_profit = round(price + (take_profit_pips * pip_value), digits) if take_profit_pips is not None else 0.0
             stop_loss = round(price - (stop_loss_pips * pip_value), digits) if stop_loss_pips is not None else 0.0
-            
+
             # Verify SL/TP prices are valid
             if take_profit_pips is not None and take_profit == 0.0:
                 print(f"❌ TP calculation failed for {symbol} - {take_profit_pips} pips resulted in 0.0")
                 time.sleep(1)
                 continue
-                
+
             if stop_loss_pips is not None and stop_loss == 0.0:
                 print(f"❌ SL calculation failed for {symbol} - {stop_loss_pips} pips resulted in 0.0")
                 time.sleep(1)
@@ -461,10 +461,10 @@ def open_buy_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pip
                 sl=stop_loss,
                 tp=take_profit
             )
-            
+
             # Rest of the function remains the same...
             # [Keep all the existing order check and execution logic]
-            
+
             if request is None:
                 print(f"Failed to prepare order request for {symbol}")
                 continue
@@ -476,16 +476,16 @@ def open_buy_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pip
             print(f"Equity: {check.equity}")
             print(f"Margin: {check.margin}")
             print(f"Margin Free: {check.margin_free}")
-            
+
             if check.retcode == 0:  # TRADE_RETCODE_DONE (success)
                 result = mt5.order_send(request)
                 print(f"\nOrder send results for {symbol}:")
                 print(f"Retcode: {result.retcode}")
                 print(f"Description: {result.comment}")
-                
+
                 # Wait a moment for the order to process
                 time.sleep(0.5)
-                
+
                 # Check if the position was actually opened, regardless of the return code
                 if has_buy_position(symbol):
                     print(f"✅ BUY order executed for {symbol} at {price} ({TIMEFRAME}) (SL: {stop_loss}, TP: {take_profit})")
@@ -503,13 +503,13 @@ def open_buy_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pip
             else:
                 print(f"Order check failed for {symbol} with code: {check.retcode}")
                 print(f"Message: {check.comment}")
-            
+
             # Check again before retrying - position might have been opened despite errors
             if has_buy_position(symbol):
                 print(f"✅ BUY position detected for {symbol} after attempted order, no need to retry")
                 log_trade(f"OPENED BUY: {lot} lot(s) of {symbol} at {price}")
                 return True
-                
+
             time.sleep(1)
 
         except Exception as e:
@@ -519,12 +519,12 @@ def open_buy_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pip
                 print(f"✅ BUY position detected for {symbol} despite error, no need to retry")
                 return True
             time.sleep(1)
-    
+
     # Final check in case position was opened in the last attempt
     if has_buy_position(symbol):
         print(f"✅ BUY position detected for {symbol} after all attempts")
         return True
-        
+
     print(f"❌ All buy order attempts failed for {symbol}")
     return False
 
@@ -536,7 +536,7 @@ def open_sell_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pi
     if not symbol_valid:
         print(f"⚠️ Invalid symbol: {symbol_error}. Using default symbol: {SYMBOL}")
         symbol = SYMBOL
-    
+
     # Validate lot size and ensure 2 decimal places
     if lot is None:
         print("⚠️ No lot size provided! Using minimum 0.01")
@@ -551,7 +551,7 @@ def open_sell_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pi
         )
         if not lot_valid:
             print(f"⚠️ Invalid lot size: {lot_error}. Using minimum: 0.01")
-    
+
     # Validate stop loss pips
     if stop_loss_pips is None:
         print("⚠️ No stop-loss provided! Using 20 pips default")
@@ -564,7 +564,7 @@ def open_sell_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pi
         )
         if not sl_valid:
             print(f"⚠️ Invalid stop loss pips: {sl_error}. Using default: 20")
-    
+
     # Validate take profit pips
     if take_profit_pips is not None:
         take_profit_pips, tp_valid, tp_error = validate_and_fix_input(
@@ -574,7 +574,7 @@ def open_sell_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pi
         )
         if not tp_valid:
             print(f"⚠️ Invalid take profit pips: {tp_error}. Using default: {stop_loss_pips * 2}")
-    
+
     # Validate max retries
     max_retries, retries_valid, retries_error = validate_and_fix_input(
         max_retries,
@@ -583,7 +583,7 @@ def open_sell_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pi
     )
     if not retries_valid:
         print(f"⚠️ Invalid max retries: {retries_error}. Using default: 3")
-    
+
     if not check_market_conditions(symbol):
         print(f"❌ Sell order aborted for {symbol} - bad market conditions")
         return False
@@ -600,12 +600,12 @@ def open_sell_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pi
 
     point = symbol_info.point
     digits = symbol_info.digits
-    
+
     # First check if we already have a sell position - avoid duplicate orders
     if has_sell_position(symbol):
         print(f"✅ SELL position already exists for {symbol}, skipping new order")
         return True
-    
+
     for attempt in range(max_retries):
         try:
             tick = mt5.symbol_info_tick(symbol)
@@ -616,17 +616,17 @@ def open_sell_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pi
 
             price = tick.bid
             pip_value = point * (10 if not symbol.endswith("JPY") else 1)  # Adjust for JPY pairs
-            
+
             # Calculate SL/TP prices - ensure we don't pass 0.0 if pips are provided
             take_profit = round(price - (take_profit_pips * pip_value), digits) if take_profit_pips is not None else 0.0
             stop_loss = round(price + (stop_loss_pips * pip_value), digits) if stop_loss_pips is not None else 0.0
-            
+
             # Verify SL/TP prices are valid
             if take_profit_pips is not None and take_profit == 0.0:
                 print(f"❌ TP calculation failed for {symbol} - {take_profit_pips} pips resulted in 0.0")
                 time.sleep(1)
                 continue
-                
+
             if stop_loss_pips is not None and stop_loss == 0.0:
                 print(f"❌ SL calculation failed for {symbol} - {stop_loss_pips} pips resulted in 0.0")
                 time.sleep(1)
@@ -634,7 +634,7 @@ def open_sell_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pi
 
             print(f"Calculated TP price: {take_profit} (from {take_profit_pips} pips)")
             print(f"Calculated SL price: {stop_loss} (from {stop_loss_pips} pips)")
-            
+
             request = prepare_order_request(
                 symbol=symbol,
                 order_type=mt5.ORDER_TYPE_SELL,
@@ -643,10 +643,10 @@ def open_sell_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pi
                 sl=stop_loss,
                 tp=take_profit
             )
-            
+
             # Rest of the function remains the same...
             # [Keep all the existing order check and execution logic]
-            
+
             if request is None:
                 print(f"Failed to prepare order request for {symbol}")
                 continue
@@ -658,16 +658,16 @@ def open_sell_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pi
             print(f"Equity: {check.equity}")
             print(f"Margin: {check.margin}")
             print(f"Margin Free: {check.margin_free}")
-            
+
             if check.retcode == 0:  # TRADE_RETCODE_DONE (success)
                 result = mt5.order_send(request)
                 print(f"\nOrder send results for {symbol}:")
                 print(f"Retcode: {result.retcode}")
                 print(f"Description: {result.comment}")
-                
+
                 # Wait a moment for the order to process
                 time.sleep(0.5)
-                
+
                 # Check if the position was actually opened, regardless of the return code
                 if has_sell_position(symbol):
                     print(f"✅ SELL order executed for {symbol} at {price} ({TIMEFRAME}) (SL: {stop_loss}, TP: {take_profit})")
@@ -685,13 +685,13 @@ def open_sell_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pi
             else:
                 print(f"Order check failed for {symbol} with code: {check.retcode}")
                 print(f"Message: {check.comment}")
-            
+
             # Check again before retrying - position might have been opened despite errors
             if has_sell_position(symbol):
                 print(f"✅ SELL position detected for {symbol} after attempted order, no need to retry")
                 log_trade(f"OPENED SELL: {lot} lot(s) of {symbol} at {price}")
                 return True
-                
+
             time.sleep(1)
 
         except Exception as e:
@@ -701,119 +701,183 @@ def open_sell_order(symbol=SYMBOL, lot=None, stop_loss_pips=None, take_profit_pi
                 print(f"✅ SELL position detected for {symbol} despite error, no need to retry")
                 return True
             time.sleep(1)
-    
+
     # Final check in case position was opened in the last attempt
     if has_sell_position(symbol):
         print(f"✅ SELL position detected for {symbol} after all attempts")
         return True
-        
+
     print(f"❌ All sell order attempts failed for {symbol}")
     return False
 
 @with_network_error_handling(max_retries=3, initial_backoff=1, backoff_factor=2)
-def close_positions_by_type(symbol=SYMBOL, position_type=None):
+def close_positions_by_type(symbol=SYMBOL, position_type=None, max_retries=3):
     """Close positions of specific type (buy/sell) for the given symbol"""
     # Validate symbol
     symbol_valid, symbol_error = validate_symbol(symbol)
     if not symbol_valid:
         print(f"⚠️ Invalid symbol: {symbol_error}. Using default symbol: {SYMBOL}")
         symbol = SYMBOL
-        
+
     # Validate position type
     if position_type not in [mt5.ORDER_TYPE_BUY, mt5.ORDER_TYPE_SELL]:
         print(f"⚠️ Invalid position type specified: {position_type}")
         return False
-        
-    positions = mt5.positions_get(symbol=symbol)
-    
-    if positions is None or len(positions) == 0:
-        return True
-    
-    for position in positions:
-        if position.magic != MAGIC_NUMBER or position.type != position_type:
-            continue
-            
-        close_type = mt5.ORDER_TYPE_SELL if position.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
-        price = mt5.symbol_info_tick(symbol).bid if position.type == mt5.ORDER_TYPE_BUY else mt5.symbol_info_tick(symbol).ask
-        
-        request = prepare_order_request(
-            symbol=symbol,
-            order_type=close_type,
-            lot_size=position.volume,
-            price=price,
-            sl=0,  # No SL/TP for closing orders
-            tp=0
-        )
-        
-        if request is None:
-            continue
 
-        request["position"] = position.ticket
-        result = mt5.order_send(request)
-        
-        if result.retcode != 0:
-            error_msg = f"Close position failed for {symbol}. Error code: {result.retcode}"
-            print(error_msg)
-            log_trade(f"ERROR: {error_msg}")
-            return False
-        
-        type_str = "BUY" if position.type == mt5.ORDER_TYPE_BUY else "SELL"
-        success_msg = f"Closed {type_str} position: {position.volume} lot(s) of {symbol} at {price}"
-        print(success_msg)
-        log_trade(f"CLOSED {type_str}: {success_msg}")
-        send_discord_notification(f"🟠 CLOSED {type_str}: {position.volume} lot(s) of {symbol} at {price}")
-    
+    for attempt in range(max_retries):
+        try:
+            positions = mt5.positions_get(symbol=symbol)
+            if positions is None or len(positions) == 0:
+                return True
+
+            positions_to_close = [pos for pos in positions if pos.type == position_type]
+            if not positions_to_close:
+                return True
+
+            close_success = True
+            for position in positions_to_close:
+                close_type = mt5.ORDER_TYPE_SELL if position.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
+                tick = mt5.symbol_info_tick(symbol)
+                if not tick:
+                    print(f"Failed to get price for {symbol}")
+                    continue
+
+                price = tick.bid if position.type == mt5.ORDER_TYPE_BUY else tick.ask
+
+                request = prepare_order_request(
+                    symbol=symbol,
+                    order_type=close_type,
+                    lot_size=position.volume,
+                    price=price,
+                    sl=0,  # No SL/TP for closing orders
+                    tp=0
+                )
+
+                if request is None:
+                    close_success = False
+                    continue
+
+                request["position"] = position.ticket
+                result = mt5.order_send(request)
+
+                # Wait a moment for the order to process
+                time.sleep(0.1)
+
+                # Verify position is closed
+                if mt5.positions_get(ticket=position.ticket):
+                    error_msg = f"Position {position.ticket} failed to close"
+                    print(error_msg)
+                    log_trade(f"ERROR: {error_msg}")
+                    close_success = False
+                else:
+                    type_str = "BUY" if position.type == mt5.ORDER_TYPE_BUY else "SELL"
+                    success_msg = f"Closed {type_str} position: {position.volume} lot(s) of {symbol} at {price}"
+                    print(success_msg)
+                    log_trade(f"CLOSED {type_str}: {success_msg}")
+                    send_discord_notification(f"🟠 CLOSED {type_str}: {position.volume} lot(s) of {symbol} at {price}")
+
+            # Verify all positions are closed
+            remaining = mt5.positions_get(symbol=symbol)
+            remaining = [pos for pos in remaining if pos.type == position_type]
+            if not remaining:
+                return True
+            elif attempt < max_retries - 1:
+                print(f"Some positions remain, retrying... Attempt {attempt + 1}/{max_retries}")
+                time.sleep(1)
+            else:
+                print(f"Failed to close all positions after {max_retries} attempts")
+                return False
+
+        except Exception as e:
+            print(f"Error closing positions: {str(e)}")
+            if attempt < max_retries - 1:
+                time.sleep(1)
+            else:
+                return False
+
     return True
 
-def close_all_positions(symbol=SYMBOL):
-    """Close all positions for the given symbol"""
+def close_all_positions(symbol=SYMBOL, max_retries=3):
+    """Close all positions for the given symbol with retries"""
     # Validate symbol
     symbol_valid, symbol_error = validate_symbol(symbol)
     if not symbol_valid:
         print(f"⚠️ Invalid symbol: {symbol_error}. Using default symbol: {SYMBOL}")
         symbol = SYMBOL
-        
-    # Close buy positions first
-    if not close_positions_by_type(symbol, mt5.ORDER_TYPE_BUY):
-        return False
-    # Then close sell positions
-    return close_positions_by_type(symbol, mt5.ORDER_TYPE_SELL)
 
-def get_positions(symbol=SYMBOL):
+    for attempt in range(max_retries):
+        try:
+            positions = mt5.positions_get(symbol=symbol)
+            if positions is None or len(positions) == 0:
+                return True
+
+            # Close buy positions first
+            buy_closed = close_positions_by_type(symbol, mt5.ORDER_TYPE_BUY, max_retries=2)
+            # Then close sell positions
+            sell_closed = close_positions_by_type(symbol, mt5.ORDER_TYPE_SELL, max_retries=2)
+
+            # Verify all positions are closed
+            remaining = mt5.positions_get(symbol=symbol)
+            if not remaining:
+                print(f"✅ All positions closed successfully for {symbol}")
+                return True
+            elif attempt < max_retries - 1:
+                print(f"Some positions remain, retrying... Attempt {attempt + 1}/{max_retries}")
+                time.sleep(1)
+            else:
+                print(f"Failed to close all positions after {max_retries} attempts")
+                return False
+
+        except Exception as e:
+            print(f"Error in close_all_positions: {str(e)}")
+            if attempt < max_retries - 1:
+                time.sleep(1)
+            else:
+                return False
+
+    return True
+
+def get_positions(symbol=SYMBOL, include_all_magic=True):
     """Get all open positions for the given symbol"""
     # Validate symbol
     symbol_valid, symbol_error = validate_symbol(symbol)
     if not symbol_valid:
         print(f"⚠️ Invalid symbol: {symbol_error}. Using default symbol: {SYMBOL}")
         symbol = SYMBOL
-        
+
     positions = mt5.positions_get(symbol=symbol)
-    return [] if positions is None else [pos for pos in positions if pos.magic == MAGIC_NUMBER]
+    if positions is None:
+        return []
 
-def get_open_positions(symbol=SYMBOL):
+    if include_all_magic:
+        return list(positions)
+    else:
+        return [pos for pos in positions if pos.magic == MAGIC_NUMBER]
+
+def get_open_positions(symbol=SYMBOL, include_all_magic=True):
     """Get all open positions for the given symbol (alias for get_positions)"""
-    return get_positions(symbol)
+    return get_positions(symbol, include_all_magic)
 
-def has_buy_position(symbol=SYMBOL):
+def has_buy_position(symbol=SYMBOL, include_all_magic=True):
     """Check if there is an open buy position"""
     # Validate symbol
     symbol_valid, symbol_error = validate_symbol(symbol)
     if not symbol_valid:
         print(f"⚠️ Invalid symbol: {symbol_error}. Using default symbol: {SYMBOL}")
         symbol = SYMBOL
-        
-    positions = get_open_positions(symbol)
+
+    positions = get_open_positions(symbol, include_all_magic)
     return any(pos.type == mt5.ORDER_TYPE_BUY for pos in positions)
 
-def has_sell_position(symbol=SYMBOL):
+def has_sell_position(symbol=SYMBOL, include_all_magic=True):
     """Check if there is an open sell position"""
     # Validate symbol
     symbol_valid, symbol_error = validate_symbol(symbol)
     if not symbol_valid:
         print(f"⚠️ Invalid symbol: {symbol_error}. Using default symbol: {SYMBOL}")
         symbol = SYMBOL
-        
-    positions = get_open_positions(symbol)
+
+    positions = get_open_positions(symbol, include_all_magic)
     return any(pos.type == mt5.ORDER_TYPE_SELL for pos in positions)
 
 def log_trade(message):
@@ -822,7 +886,7 @@ def log_trade(message):
     if not isinstance(message, str):
         print(f"⚠️ Invalid log message: {message}. Converting to string.")
         message = str(message)
-        
+
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(LOG_FILE, "a") as log_file:
         log_file.write(f"{timestamp} - {message}\n")
@@ -835,41 +899,41 @@ def check_and_add_sltp(symbol=SYMBOL):
     if not symbol_valid:
         print(f"⚠️ Invalid symbol: {symbol_error}. Using default symbol: {SYMBOL}")
         symbol = SYMBOL
-        
+
     positions = get_open_positions(symbol)
     if not positions:
         return True
-    
+
     for position in positions:
         # Skip if position already has SL/TP
         if position.sl != 0.0 and position.tp != 0.0:
             continue
-            
+
         print(f"Found position {position.ticket} for {symbol} with missing SL/TP")
-        
+
         # Get current price
         tick = mt5.symbol_info_tick(symbol)
         if not tick:
             print(f"Failed to get current price for {symbol}")
             continue
-            
+
         price = tick.ask if position.type == mt5.ORDER_TYPE_BUY else tick.bid
         point = mt5.symbol_info(symbol).point
         digits = mt5.symbol_info(symbol).digits
         pip_value = point * (10 if not symbol.endswith("JPY") else 1)
-        
+
         # Calculate SL/TP based on risk management settings
         sl_pips = 20  # Default SL pips
-        
+
         # Get TP multiplier from symbol settings or use default
         tp_multiplier = SYMBOL_SETTINGS.get(symbol, {}).get("TP_MULTIPLIER", DEFAULT_TP_MULTIPLIER)
-        
+
         # Use fixed TP pips if specified, otherwise calculate from multiplier
         if DEFAULT_TP_PIPS is not None:
             tp_pips = DEFAULT_TP_PIPS
         else:
             tp_pips = int(sl_pips * tp_multiplier)
-        
+
         # Calculate SL/TP prices based on position type
         if position.type == mt5.ORDER_TYPE_BUY:
             sl_price = round(price - (sl_pips * pip_value), digits)
@@ -877,7 +941,7 @@ def check_and_add_sltp(symbol=SYMBOL):
         else:
             sl_price = round(price + (sl_pips * pip_value), digits)
             tp_price = round(price - (tp_pips * pip_value), digits)
-        
+
         # Prepare modification request
         request = {
             "action": mt5.TRADE_ACTION_SLTP,
@@ -888,7 +952,7 @@ def check_and_add_sltp(symbol=SYMBOL):
             "magic": MAGIC_NUMBER,
             "comment": "python-bot-added-sltp"
         }
-        
+
         # Send modification request
         result = mt5.order_send(request)
         if result.retcode == mt5.TRADE_RETCODE_DONE:
@@ -897,5 +961,5 @@ def check_and_add_sltp(symbol=SYMBOL):
         else:
             print(f"❌ Failed to add SL/TP to position {position.ticket}: {result.comment}")
             log_trade(f"FAILED SL/TP: {symbol} position {position.ticket} - {result.comment}")
-    
+
     return True
